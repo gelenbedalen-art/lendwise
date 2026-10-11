@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
+import { isAddress } from 'viem'
 
 import { loadMarketBorrowHistoryRates } from '@/app/actions/market-rates.actions'
 import { NetworkIcon, ProtocolIcon, TokenIcon } from '@/components/icon'
@@ -56,7 +57,7 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { WalletAvatar } from '@/components/wallet/WalletAvatar'
-import { protocolVersionName } from '@/config/protocols-meta'
+import { isProtocolName, protocolVersionName } from '@/config/protocols-meta'
 import { useCurrency } from '@/contexts'
 import { useIsMobile } from '@/hooks/useMobile'
 import { formatCompactCurrency } from '@/lib/format-currency'
@@ -269,6 +270,17 @@ function TableCellViewer({ item }: { item: BorrowPosition }) {
     const option = TIMEFRAME_OPTIONS.find((o) => o.label === timeframeLabel)
     if (!option) return
 
+    // History rates are served by the EVM app adapters only.
+    if (
+      !isAddress(item.loanAssetAddress, { strict: false }) ||
+      !isProtocolName(item.protocol)
+    ) {
+      setRates([])
+      return
+    }
+    const tokenId = item.loanAssetAddress
+    const protocolId = item.protocol
+
     startTransition(async () => {
       setSelectedTimeframe(timeframeLabel)
 
@@ -280,10 +292,10 @@ function TableCellViewer({ item }: { item: BorrowPosition }) {
 
       try {
         const rates = await loadMarketBorrowHistoryRates({
-          protocolId: item.protocol,
+          protocolId,
           chainId: item.poolChainId,
           poolId: item.poolId,
-          tokenId: item.loanAssetAddress,
+          tokenId,
           interval: option.label,
           fromTimestamp,
         })

@@ -87,39 +87,16 @@ export interface TokenPrice {
   timestamp: number
 }
 
-export interface UserPositionSummary {
-  address: Address
-  totalSupplyUSD: number
-  totalBorrowUSD: number
-  netAPY: number
-  healthFactor: number
-  positions: Position[]
-  protocolBreakdown: Record<
-    ProtocolName,
-    {
-      supplyUSD: number
-      borrowUSD: number
-      positionCount: number
-    }
-  >
-}
-
-export interface TokenPrice {
-  address: Address
-  priceUSD: number
-  timestamp: number
-}
-
 export interface SupplyPosition {
   id: string
-  protocol: ProtocolName
+  protocol: PositionProtocol
   network: string
-  userAddress: Address
+  userAddress: ChainAddress
   poolName: string
-  poolAddress: Address
+  poolAddress: ChainAddress
   poolId: string
   poolChainId: number
-  assetAddress: Address
+  assetAddress: ChainAddress
   assetName: string
   assetSymbol: string
   assetDecimals: number
@@ -128,6 +105,7 @@ export interface SupplyPosition {
   assetLiveAmountUsd: number
   apy: number
   link?: string
+  riskAccountId?: string
 }
 
 export interface SupplyProduct {
@@ -222,15 +200,15 @@ export interface BorrowProduct {
 
 export interface BorrowPosition {
   id: string
-  protocol: ProtocolName
+  protocol: PositionProtocol
   network: string
   healthFactor: number
-  userAddress: Address
+  userAddress: ChainAddress
   poolId: string
   poolName: string
-  poolAddress: Address
+  poolAddress: ChainAddress
   poolChainId: number
-  loanAssetAddress: Address
+  loanAssetAddress: ChainAddress
   loanAssetName: string
   loanAssetSymbol: string
   loanAssetDecimals: number
@@ -238,9 +216,14 @@ export interface BorrowPosition {
   loanAssetAmountUsd: number
   loanLiveAssetAmountUsd: number
   loanTimestamp: number
-  collaterals: (Token & { amount: number; amountUsd: number })[]
+  collaterals: (Omit<Token, 'address'> & {
+    address: ChainAddress
+    amount: number
+    amountUsd: number
+  })[]
   apy: number
   link?: string
+  riskAccountId?: string
 }
 
 export interface UserPosition {
