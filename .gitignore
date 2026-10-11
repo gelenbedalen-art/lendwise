@@ -43,6 +43,7 @@ pnpm-debug.log*
 **/generated/
 next-env.d.ts
 
-# Claude Code
-.claude/worktrees/
-.claude/settings.local.json
+# Agent files — kept local, not versioned
+/.claude/
+/AGENTS.md
+/CLAUDE.md
