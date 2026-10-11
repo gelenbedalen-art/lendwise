@@ -1,0 +1,105 @@
+import { latestPrice } from '@/lib/db/repositories/price'
+import type { StellarHolding } from '@/lib/portfolio/types'
+
+/** Circle's USDC on Stellar mainnet — the only USDC priced as USDC. */
+export const CIRCLE_USDC_ISSUER =
+  'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN'
+
+export interface HorizonBalance {
+  balance: string
+  asset_type: string
+  asset_code?: string
+  asset_issuer?: string
+}
+
+function horizonUrl(): string {
+  return (
+    process.env.STELLAR_HORIZON_URL?.trim() || 'https://horizon.stellar.org'
+  )
+}
+
+/** An unfunded account (404) holds nothing; any other failure throws. */
+export async function fetchHorizonBalances(
+  address: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<HorizonBalance[]> {
+  const res = await fetchImpl(`${horizonUrl()}/accounts/${address}`)
+  if (res.status === 404) return []
+  if (!res.ok) throw new Error(`Horizon ${res.status} for ${address}`)
+  const body = (await res.json()) as { balances?: HorizonBalance[] }
+  return body.balances ?? []
+}
+
+export function holdingsFromBalances(
+  owner: string,
+  balances: HorizonBalance[]
+): StellarHolding[] {
+  return balances.flatMap((b): StellarHolding[] => {
+    const base = {
+      owner,
+      balance: Number(b.balance),
+      priceUsd: null,
+      valueUsd: null,
+    }
+    if (b.asset_type === 'native') {
+      return [{ ...base, assetType: 'native', code: 'XLM', issuer: null }]
+    }
+    if (
+      (b.asset_type === 'credit_alphanum4' ||
+        b.asset_type === 'credit_alphanum12') &&
+      b.asset_code
+    ) {
+      return [
+        {
+          ...base,
+          assetType: 'credit',
+          code: b.asset_code,
+          issuer: b.asset_issuer ?? null,
+        },
+      ]
+    }
+    return []
+  })
+}
+
+function priceSymbol(h: StellarHolding): string | null {
+  if (h.assetType === 'native') return 'XLM'
+  if (h.code === 'USDC' && h.issuer === CIRCLE_USDC_ISSUER) return 'USDC'
+  return null
+}
+
+/** Native XLM and every trustline of each address, USD-valued where we know the price. */
+export async function getStellarWalletHoldings(
+  addresses: string[],
+  deps: {
+    fetchImpl?: typeof fetch
+    price?: (symbol: string) => Promise<number | null>
+  } = {}
+): Promise<StellarHolding[]> {
+  const fetchImpl = deps.fetchImpl ?? fetch
+  const price = deps.price ?? latestPrice
+
+  const holdings = (
+    await Promise.all(
+      addresses.map(async (a) =>
+        holdingsFromBalances(a, await fetchHorizonBalances(a, fetchImpl))
+      )
+    )
+  ).flat()
+
+  const symbols = [
+    ...new Set(holdings.map(priceSymbol).filter((s): s is string => s != null)),
+  ]
+  const prices = new Map<string, number | null>()
+  await Promise.all(
+    symbols.map(async (s) => {
+      prices.set(s, await price(s).catch(() => null))
+    })
+  )
+
+  return holdings.map((h) => {
+    const symbol = priceSymbol(h)
+    const p = symbol ? (prices.get(symbol) ?? null) : null
+    return { ...h, priceUsd: p, valueUsd: p == null ? null : h.balance * p }
+  })
+}

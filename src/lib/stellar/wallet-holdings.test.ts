@@ -1,0 +1,94 @@
+import { describe, expect, it, vi } from 'vitest'
+
+import {
+  CIRCLE_USDC_ISSUER,
+  type HorizonBalance,
+  getStellarWalletHoldings,
+  holdingsFromBalances,
+} from './wallet-holdings'
+
+vi.mock('@/lib/db/repositories/price', () => ({ latestPrice: vi.fn() }))
+
+const G = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN'
+
+const balances: HorizonBalance[] = [
+  { balance: '120.5000000', asset_type: 'native' },
+  {
+    balance: '42.0000000',
+    asset_type: 'credit_alphanum4',
+    asset_code: 'USDC',
+    asset_issuer: CIRCLE_USDC_ISSUER,
+  },
+  {
+    balance: '7.0000000',
+    asset_type: 'credit_alphanum12',
+    asset_code: 'AQUARIUS',
+    asset_issuer: 'GISSUER',
+  },
+  { balance: '3.0000000', asset_type: 'liquidity_pool_shares' },
+]
+
+const respond = (status: number, body: unknown) =>
+  vi.fn(
+    async () => new Response(JSON.stringify(body), { status })
+  ) as unknown as typeof fetch
+
+describe('holdingsFromBalances', () => {
+  it('keeps XLM and every trustline, and skips pool shares', () => {
+    expect(
+      holdingsFromBalances(G, balances).map((h) => [h.code, h.balance])
+    ).toEqual([
+      ['XLM', 120.5],
+      ['USDC', 42],
+      ['AQUARIUS', 7],
+    ])
+  })
+})
+
+describe('getStellarWalletHoldings', () => {
+  it('prices XLM and Circle USDC, leaves the rest unpriced', async () => {
+    const price = vi.fn(async (symbol: string) => (symbol === 'XLM' ? 0.3 : 1))
+    const holdings = await getStellarWalletHoldings([G], {
+      fetchImpl: respond(200, { balances }),
+      price,
+    })
+    expect(holdings.map((h) => [h.code, h.valueUsd])).toEqual([
+      ['XLM', 120.5 * 0.3],
+      ['USDC', 42],
+      ['AQUARIUS', null],
+    ])
+    expect(price).toHaveBeenCalledTimes(2)
+  })
+
+  it('treats an unfunded account (404) as empty', async () => {
+    expect(
+      await getStellarWalletHoldings([G], {
+        fetchImpl: respond(404, {}),
+        price: vi.fn(),
+      })
+    ).toEqual([])
+  })
+
+  it('rejects when Horizon fails', async () => {
+    await expect(
+      getStellarWalletHoldings([G], {
+        fetchImpl: respond(503, {}),
+        price: vi.fn(),
+      })
+    ).rejects.toThrow('Horizon 503')
+  })
+
+  it('keeps balances when a price lookup throws', async () => {
+    const holdings = await getStellarWalletHoldings([G], {
+      fetchImpl: respond(200, { balances: [balances[0]] }),
+      price: async () => {
+        throw new Error('db down')
+      },
+    })
+    expect(holdings[0]).toMatchObject({
+      code: 'XLM',
+      balance: 120.5,
+      valueUsd: null,
+    })
+  })
+})
