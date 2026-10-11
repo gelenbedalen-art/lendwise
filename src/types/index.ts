@@ -1,6 +1,9 @@
 import { Address } from 'viem'
 
-import type { ProtocolName } from '@/config/protocols-meta'
+import type {
+  PositionOnlyProtocol,
+  ProtocolName,
+} from '@/config/protocols-meta'
 
 // ============================================================================
 // PROTOCOL TYPES
@@ -11,6 +14,10 @@ export type { ProtocolName }
 
 export type PositionType = 'supply' | 'borrow'
 export type AssetType = 'stable' | 'volatile' | 'liquid-staking'
+
+/** An address on any supported chain family: `0x…` on EVM, `G…` / `C…` on Stellar. */
+export type ChainAddress = string
+export type PositionProtocol = ProtocolName | PositionOnlyProtocol
 
 export interface Token {
   address: Address
@@ -54,6 +61,29 @@ export interface Position {
   apy: number
   healthFactor?: number
   collateralEnabled: boolean
+  timestamp: number
+}
+
+export interface UserPositionSummary {
+  address: Address
+  totalSupplyUSD: number
+  totalBorrowUSD: number
+  netAPY: number
+  healthFactor: number
+  positions: Position[]
+  protocolBreakdown: Record<
+    ProtocolName,
+    {
+      supplyUSD: number
+      borrowUSD: number
+      positionCount: number
+    }
+  >
+}
+
+export interface TokenPrice {
+  address: Address
+  priceUSD: number
   timestamp: number
 }
 
