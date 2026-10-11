@@ -1,0 +1,57 @@
+{
+  "capturedAt": "2026-10-11T23:40:03.365Z",
+  "chainId": 1,
+  "market": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
+  "user": "0x60b2dc238f9ee37eb5a7549842febef8233748ba",
+  "reportedHealthFactor": 1.3684535632107577,
+  "collaterals": [
+    {
+      "symbol": "USDC",
+      "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "amount": 35569.154895,
+      "usdPerToken": 0.99987001,
+      "liquidationThreshold": 0.78
+    },
+    {
+      "symbol": "USDT",
+      "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+      "amount": 0.000316,
+      "usdPerToken": 0.99893,
+      "liquidationThreshold": 0.78
+    },
+    {
+      "symbol": "WETH",
+      "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      "amount": 2.0464105540423616,
+      "usdPerToken": 2533.63855501,
+      "liquidationThreshold": 0.83
+    },
+    {
+      "symbol": "WBTC",
+      "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+      "amount": 0.12490013,
+      "usdPerToken": 83456.59622981,
+      "liquidationThreshold": 0.78
+    }
+  ],
+  "debts": [
+    {
+      "symbol": "USDC",
+      "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "amount": 23021.207473,
+      "usdPerToken": 0.99987001
+    },
+    {
+      "symbol": "USDT",
+      "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+      "amount": 1069.25313,
+      "usdPerToken": 0.99893
+    },
+    {
+      "symbol": "WETH",
+      "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      "amount": 2.0804518591687904,
+      "usdPerToken": 2533.63855501
+    }
+  ]
+}
