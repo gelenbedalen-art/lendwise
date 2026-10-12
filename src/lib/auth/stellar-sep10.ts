@@ -108,7 +108,7 @@ function allowedDomains(): Set<string> {
   ].map(hostOf)
   if (process.env.NODE_ENV !== 'production')
     hosts.push('localhost', '127.0.0.1')
-  return new Set(hosts.filter((h): h is string => h !== null))
+  return new Set(hosts.filter((h): h is string => !!h))
 }
 
 /**

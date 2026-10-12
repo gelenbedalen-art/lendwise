@@ -142,6 +142,13 @@ describe('stellar SEP-10 challenge', () => {
       })
     ).rejects.toThrow('not an allowed sign-in domain')
   })
+
+  it('ignores empty entries in STELLAR_SIGN_IN_EXTRA_HOSTS', async () => {
+    process.env.STELLAR_SIGN_IN_EXTRA_HOSTS = '/, https://'
+    await expect(
+      issueStellarChallenge({ address: user.publicKey(), domain: '' })
+    ).rejects.toThrow('not an allowed sign-in domain')
+  })
 })
 
 describe('stellar SEP-10 verification', () => {
