@@ -97,3 +97,36 @@ export function walletBalanceRows(
       return a.assetCode.localeCompare(b.assetCode)
     })
 }
+
+export interface WalletNetworkSlice {
+  network: string
+  valueUsd: number
+  /** Percentage (0-100) of the total priced value. */
+  share: number
+}
+
+/** Wallet rows grouped by network: priced value per network, largest first. */
+export function walletBalanceBreakdown(rows: WalletBalanceRow[]): {
+  totalUsd: number | null
+  priced: number
+  unpriced: number
+  slices: WalletNetworkSlice[]
+} {
+  const byNetwork = new Map<string, number>()
+  let priced = 0
+  for (const row of rows) {
+    if (row.valueUsd === null) continue
+    priced += 1
+    byNetwork.set(row.network, (byNetwork.get(row.network) ?? 0) + row.valueUsd)
+  }
+  const totalUsd =
+    priced > 0 ? [...byNetwork.values()].reduce((a, v) => a + v, 0) : null
+  const slices = [...byNetwork.entries()]
+    .map(([network, valueUsd]) => ({
+      network,
+      valueUsd,
+      share: totalUsd && totalUsd > 0 ? (valueUsd / totalUsd) * 100 : 0,
+    }))
+    .sort((a, b) => b.valueUsd - a.valueUsd)
+  return { totalUsd, priced, unpriced: rows.length - priced, slices }
+}

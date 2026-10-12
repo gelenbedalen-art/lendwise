@@ -1,4 +1,4 @@
-import { Activity, TrendingDown, TrendingUp } from 'lucide-react'
+import { Activity, TrendingDown, TrendingUp, Wallet } from 'lucide-react'
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts'
 
 import type { HealthSummary } from '@/lib/risk/summary'
@@ -21,7 +21,12 @@ export default function PortfolioSidebar({
 }: {
   summary: PortfolioSummary
   health: HealthSummary
-  walletBalances: { valueUsd: number | null; count: number }
+  walletBalances: {
+    totalUsd: number | null
+    count: number
+    unpriced: number
+    breakdown: BreakdownItem[]
+  }
 }) {
   const { totalSupplying, totalBorrowing, supplyBreakdown, borrowBreakdown } =
     summary
@@ -106,18 +111,32 @@ export default function PortfolioSidebar({
       {/* Wallet balances — held assets, not part of Net Position */}
       {walletBalances.count > 0 && (
         <div className="px-6 py-5">
-          <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
-            Wallet Balances
-          </p>
-          <p className="text-foreground mt-2 font-mono text-lg font-semibold">
-            {walletBalances.valueUsd === null
-              ? '—'
-              : `$${walletBalances.valueUsd.toFixed(2)}`}
-          </p>
-          <p className="text-muted-foreground text-xs">
-            {walletBalances.count}{' '}
-            {walletBalances.count === 1 ? 'asset' : 'assets'}
-          </p>
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+                Wallet Balances
+              </p>
+              <p className="text-muted-foreground text-xs">
+                {walletBalances.count}{' '}
+                {walletBalances.count === 1 ? 'asset' : 'assets'}
+              </p>
+            </div>
+            <div className="text-foreground flex items-center gap-1">
+              <Wallet className="h-3.5 w-3.5" />
+              <span className="font-mono text-lg font-semibold">
+                {walletBalances.totalUsd === null
+                  ? '—'
+                  : `$${walletBalances.totalUsd.toFixed(2)}`}
+              </span>
+            </div>
+          </div>
+          <DonutWithLegend data={walletBalances.breakdown} />
+          {walletBalances.unpriced > 0 && (
+            <p className="text-muted-foreground mt-3 text-xs">
+              {walletBalances.unpriced} unpriced{' '}
+              {walletBalances.unpriced === 1 ? 'asset' : 'assets'} not included
+            </p>
+          )}
         </div>
       )}
     </aside>

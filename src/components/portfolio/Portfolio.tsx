@@ -15,8 +15,10 @@ import {
   attachRisk,
   orphanRiskRows,
   reportedHealthFactors,
+  walletBalanceBreakdown,
   walletBalanceRows,
 } from '@/lib/portfolio/view'
+import { CHAIN_BY_SLUG } from '@/lib/protocols/core/toolkit'
 import { summarizeHealth } from '@/lib/risk/summary'
 import { useWalletStore } from '@/stores/walletStore'
 
@@ -25,6 +27,14 @@ import { HealthSummaryValue } from './HealthFactorValue'
 import { PartialDataBanner } from './PartialDataBanner'
 import PortfolioSidebar from './PortfolioSidebar'
 import { PortfolioSkeleton } from './PortfolioSkeleton'
+
+/** Chain registry display name for a slug, else the capitalized slug. */
+function networkName(slug: string): string {
+  return (
+    (CHAIN_BY_SLUG as Record<string, { name: string } | undefined>)[slug]
+      ?.name ?? slug.charAt(0).toUpperCase() + slug.slice(1)
+  )
+}
 
 export function Portfolio() {
   const { address: evmAddress, isConnected: isEvmConnected } = useAccount()
@@ -164,13 +174,19 @@ export function Portfolio() {
   )
 
   const walletData = walletBalanceRows(portfolio.holdings)
-  const pricedWallet = walletData.filter((r) => r.valueUsd !== null)
+  const walletBreakdown = walletBalanceBreakdown(walletData)
   const walletBalances = {
-    valueUsd:
-      pricedWallet.length > 0
-        ? pricedWallet.reduce((acc, r) => acc + (r.valueUsd ?? 0) * rate, 0)
-        : null,
+    totalUsd:
+      walletBreakdown.totalUsd === null
+        ? null
+        : walletBreakdown.totalUsd * rate,
     count: walletData.length,
+    unpriced: walletBreakdown.unpriced,
+    breakdown: walletBreakdown.slices.map((slice, idx) => ({
+      name: networkName(slice.network),
+      value: slice.share,
+      color: PROTOCOL_COLORS[idx % PROTOCOL_COLORS.length],
+    })),
   }
 
   const netPosition =
