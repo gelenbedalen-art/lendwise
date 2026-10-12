@@ -67,3 +67,25 @@ export function morphoRiskAccount(item: MorphoBorrowItem): RiskAccount | null {
     ],
   }
 }
+
+/**
+ * The borrow productId an item's risk account is priced under, or null when it
+ * has no risk account (idle market: no collateral asset or no state).
+ */
+export function morphoRiskProductId(item: MorphoBorrowItem): string | null {
+  const { market, state } = item
+  if (!market.collateralAsset || !state) return null
+  return buildProductId(market.morphoBlue.chain.id, market.marketId, 'borrow')
+}
+
+/**
+ * Only markets in the catalogue are priced (apy_hourly); an item outside it
+ * gets no risk account, so it never shows as a permanent Unknown.
+ */
+export function isPricedMorphoItem(
+  item: MorphoBorrowItem,
+  catalogued: ReadonlySet<string>
+): boolean {
+  const productId = morphoRiskProductId(item)
+  return productId != null && catalogued.has(productId)
+}

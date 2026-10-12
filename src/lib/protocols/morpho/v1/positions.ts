@@ -1,5 +1,6 @@
 import type { Address } from 'viem'
 
+import { activeProductIds } from '@/lib/db/repositories/products'
 import {
   CHAIN_SLUG_MAP,
   type RegisteredChainId,
@@ -29,7 +30,12 @@ import {
   USER_SUPPLY_POSITIONS,
   VAULT_SUPPLY_HISTORY,
 } from './queries'
-import { morphoRiskAccount, morphoRiskAccountId } from './risk'
+import {
+  isPricedMorphoItem,
+  morphoRiskAccount,
+  morphoRiskAccountId,
+  morphoRiskProductId,
+} from './risk'
 
 export const client = createGraphQLClient(MORPHO_V1_API_URL)
 
@@ -183,13 +189,28 @@ async function fetchUserBorrowItems(
   return allItems
 }
 
-const fetchUserBorrowItemsOnce = dedupeInFlight(
+/** The catalogued borrow productIds among `items`; empty when the lookup fails. */
+async function cataloguedBorrowIds(items: BorrowItem[]): Promise<Set<string>> {
+  const ids = [...new Set(items.flatMap((i) => morphoRiskProductId(i) ?? []))]
+  try {
+    return await activeProductIds(ids)
+  } catch (err) {
+    console.error('[morpho] catalogue lookup failed:', err)
+    return new Set()
+  }
+}
+
+/** Positions, risk accounts and the catalogue check share one read. */
+const fetchUserBorrowReadOnce = dedupeInFlight(
   (addresses: Address[]) =>
     addresses
       .map((a) => a.toLowerCase())
       .sort()
       .join(','),
-  fetchUserBorrowItems
+  async (addresses: Address[]) => {
+    const items = await fetchUserBorrowItems(addresses)
+    return { items, catalogued: await cataloguedBorrowIds(items) }
+  }
 )
 
 export async function getUserBorrowPositions({
@@ -203,7 +224,7 @@ export async function getUserBorrowPositions({
   }
 
   try {
-    const items = await fetchUserBorrowItemsOnce(addresses)
+    const { items, catalogued } = await fetchUserBorrowReadOnce(addresses)
 
     return items.map((position): BorrowPosition => {
       const network =
@@ -246,7 +267,9 @@ export async function getUserBorrowPositions({
         apy: position.market.state?.avgBorrowApy
           ? Number((position.market.state.avgBorrowApy * 100).toFixed(2))
           : 0,
-        riskAccountId: morphoRiskAccountId(position),
+        riskAccountId: isPricedMorphoItem(position, catalogued)
+          ? morphoRiskAccountId(position)
+          : undefined,
         link: `https://app.morpho.org/${position.market.morphoBlue.chain.network.toLowerCase()}/market/${position.market.marketId}/${generateSlug(position.market.collateralAsset?.symbol + '-' + position.market.loanAsset?.symbol)}?subTab=yourPosition`,
       }
     })
@@ -262,8 +285,10 @@ export async function getRiskAccounts({
   addresses: Address[]
 }): Promise<RiskAccount[]> {
   if (addresses.length === 0) return []
-  const items = await fetchUserBorrowItemsOnce(addresses)
-  return items.flatMap((item) => morphoRiskAccount(item) ?? [])
+  const { items, catalogued } = await fetchUserBorrowReadOnce(addresses)
+  return items.flatMap((item) =>
+    isPricedMorphoItem(item, catalogued) ? (morphoRiskAccount(item) ?? []) : []
+  )
 }
 
 const TIMEFRAME_MAP: Record<TimeframeLabel, TimeseriesInterval> = {
