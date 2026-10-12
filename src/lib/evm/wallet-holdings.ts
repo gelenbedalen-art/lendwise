@@ -42,6 +42,9 @@ export interface EvmHoldingsDeps {
 /** Longest one chain may take before it counts as failed. */
 export const EVM_CHAIN_TIMEOUT_MS = 8_000
 
+/** One HTTP attempt: short enough to leave room for the fallback RPC inside EVM_CHAIN_TIMEOUT_MS. */
+export const EVM_RPC_TIMEOUT_MS = 3_500
+
 /** Chains read at once: keeps a portfolio load's burst under the Infura key's rate limit. */
 export const EVM_CHAIN_CONCURRENCY = 4
 
