@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RiskAccount } from '@/lib/risk/types'
 import type { BorrowPosition, SupplyPosition } from '@/types'
@@ -58,6 +58,13 @@ function deps(overrides: Partial<PortfolioDeps> = {}): PortfolioDeps {
 }
 
 describe('loadPortfolio', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('keeps the EVM side and reports the Stellar adapter that failed', async () => {
     const result = await loadPortfolio(
       wallets,
@@ -72,7 +79,7 @@ describe('loadPortfolio', () => {
       {
         chainFamily: 'stellar',
         source: 'blend_v2.1',
-        message: 'RPC unreachable',
+        message: 'Temporarily unavailable',
       },
     ])
   })
@@ -91,7 +98,7 @@ describe('loadPortfolio', () => {
       {
         chainFamily: 'stellar',
         source: 'stellar_wallet',
-        message: 'Horizon 503',
+        message: 'Temporarily unavailable',
       },
     ])
   })
@@ -138,5 +145,46 @@ describe('loadPortfolio', () => {
       failures: [],
     })
     expect(stellarHoldings).not.toHaveBeenCalled()
+  })
+
+  it('keeps positions when only the risk read fails', async () => {
+    const result = await loadPortfolio(
+      wallets,
+      deps({
+        evmAdapters: {
+          aave_v3: async () => ({
+            ...source([supply('aave')]),
+            getRiskAccounts: async () => {
+              throw new Error('https://rpc.example/?key=secret')
+            },
+          }),
+        },
+      })
+    )
+    expect(result.positions.supply.aave_v3).toEqual([supply('aave')])
+    expect(result.failures).toEqual([
+      {
+        chainFamily: 'evm',
+        source: 'aave_v3',
+        message: 'Temporarily unavailable',
+      },
+    ])
+    expect(JSON.stringify(result)).not.toContain('secret')
+  })
+
+  it('returns the portfolio without risk when computeRisk throws', async () => {
+    const result = await loadPortfolio(
+      wallets,
+      deps({
+        evmAdapters: {
+          aave_v3: async () => source([supply('aave')], [account('e')]),
+        },
+        computeRisk: async () => {
+          throw new Error('boom')
+        },
+      })
+    )
+    expect(result.riskAccounts).toEqual([])
+    expect(result.positions.supply.aave_v3).toEqual([supply('aave')])
   })
 })

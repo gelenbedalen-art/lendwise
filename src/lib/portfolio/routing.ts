@@ -31,3 +31,19 @@ export function routePortfolioWallets(
 
   return { evmAddresses: [...evm.values()], stellarAddresses: [...stellar] }
 }
+
+/**
+ * Public-input guard: keeps only well-formed wallet entries so malformed
+ * client payloads can never throw inside routing.
+ */
+export function sanitizeWalletInputs(input: unknown): PortfolioWalletInput[] {
+  if (!Array.isArray(input)) return []
+  return input.filter(
+    (w): w is PortfolioWalletInput =>
+      typeof w === 'object' &&
+      w !== null &&
+      typeof (w as { address?: unknown }).address === 'string' &&
+      ((w as { chainFamily?: unknown }).chainFamily === 'evm' ||
+        (w as { chainFamily?: unknown }).chainFamily === 'stellar')
+  )
+}

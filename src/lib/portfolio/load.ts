@@ -48,8 +48,20 @@ const emptyFamily = (): FamilyResult => ({
   failures: [],
 })
 
-const reasonOf = (reason: unknown) =>
-  reason instanceof Error ? reason.message : String(reason)
+const GENERIC_FAILURE_MESSAGE = 'Temporarily unavailable'
+
+/**
+ * Upstream errors can carry RPC URLs with keys or internal hosts: the raw
+ * reason stays in the server logs, the client only gets a generic message.
+ */
+function failure(
+  chainFamily: PortfolioChainFamily,
+  source: string,
+  reason: unknown
+): PortfolioPartialFailure {
+  console.error(`[portfolio] ${chainFamily}/${source} failed:`, reason)
+  return { chainFamily, source, message: GENERIC_FAILURE_MESSAGE }
+}
 
 /** Every adapter of a family, each settled on its own. */
 async function loadAdapters<A extends string>(
@@ -65,14 +77,20 @@ async function loadAdapters<A extends string>(
     entries.map(async ([, load]) => {
       const adapter = await load()
       // Concurrent on purpose: adapters dedupe the shared upstream read.
-      const [supply, borrow, risk] = await Promise.all([
-        adapter.getUserSupplyPositions({ addresses }),
-        adapter.getUserBorrowPositions({ addresses }),
+      // Risk settles apart: its failure must not discard good positions.
+      const riskRead = Promise.resolve(
         adapter.getRiskAccounts
           ? adapter.getRiskAccounts({ addresses })
-          : Promise.resolve([] as RiskAccount[]),
+          : ([] as RiskAccount[])
+      ).then(
+        (value) => ({ ok: true as const, value }),
+        (reason: unknown) => ({ ok: false as const, reason })
+      )
+      const [supply, borrow] = await Promise.all([
+        adapter.getUserSupplyPositions({ addresses }),
+        adapter.getUserBorrowPositions({ addresses }),
       ])
-      return { supply, borrow, risk }
+      return { supply, borrow, risk: await riskRead }
     })
   )
 
@@ -81,9 +99,11 @@ async function loadAdapters<A extends string>(
     if (s.status === 'fulfilled') {
       result.positions.supply[source] = s.value.supply
       result.positions.borrow[source] = s.value.borrow
-      result.riskAccounts.push(...s.value.risk)
+      if (s.value.risk.ok) result.riskAccounts.push(...s.value.risk.value)
+      else
+        result.failures.push(failure(chainFamily, source, s.value.risk.reason))
     } else {
-      result.failures.push({ chainFamily, source, message: reasonOf(s.reason) })
+      result.failures.push(failure(chainFamily, source, s.reason))
     }
   })
   return result
@@ -101,19 +121,13 @@ async function loadStellar(
   const result =
     adapters.status === 'fulfilled' ? adapters.value : emptyFamily()
   if (adapters.status === 'rejected') {
-    result.failures.push({
-      chainFamily: 'stellar',
-      source: 'stellar',
-      message: reasonOf(adapters.reason),
-    })
+    result.failures.push(failure('stellar', 'stellar', adapters.reason))
   }
   if (holdings.status === 'fulfilled') result.holdings = holdings.value
   else {
-    result.failures.push({
-      chainFamily: 'stellar',
-      source: STELLAR_WALLET_SOURCE,
-      message: reasonOf(holdings.reason),
-    })
+    result.failures.push(
+      failure('stellar', STELLAR_WALLET_SOURCE, holdings.reason)
+    )
   }
   return result
 }
@@ -143,19 +157,23 @@ export async function loadPortfolio(
       loaded.push(s.value)
       failures.push(...s.value.failures)
     } else {
-      failures.push({
-        chainFamily,
-        source: chainFamily,
-        message: reasonOf(s.reason),
-      })
+      failures.push(failure(chainFamily, chainFamily, s.reason))
     }
   })
 
   const accounts = loaded.flatMap((f) => f.riskAccounts)
+  let riskAccounts: RiskAccountResult[] = []
+  if (accounts.length > 0) {
+    try {
+      riskAccounts = await deps.computeRisk(accounts)
+    } catch (reason) {
+      console.error('[portfolio] risk computation failed:', reason)
+    }
+  }
   return {
     positions: mergeUserPositions(...loaded.map((f) => f.positions)),
     holdings: loaded.flatMap((f) => f.holdings),
-    riskAccounts: accounts.length > 0 ? await deps.computeRisk(accounts) : [],
+    riskAccounts,
     failures,
   }
 }

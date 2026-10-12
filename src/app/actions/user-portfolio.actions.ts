@@ -5,6 +5,7 @@ import {
   stellarPositionAdapters,
 } from '@/config/protocols-server'
 import { loadPortfolio } from '@/lib/portfolio/load'
+import { sanitizeWalletInputs } from '@/lib/portfolio/routing'
 import type {
   PortfolioWalletInput,
   UserPortfolioResult,
@@ -23,7 +24,7 @@ const evmAdapters: Record<string, () => Promise<AppAdapter>> =
 export async function loadUserPortfolio(
   wallets: PortfolioWalletInput[]
 ): Promise<UserPortfolioResult> {
-  return loadPortfolio(Array.isArray(wallets) ? wallets : [], {
+  return loadPortfolio(sanitizeWalletInputs(wallets), {
     evmAdapters,
     stellarAdapters: stellarPositionAdapters(),
     stellarHoldings: (addresses) => getStellarWalletHoldings(addresses),

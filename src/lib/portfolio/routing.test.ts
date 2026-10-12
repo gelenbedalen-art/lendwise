@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { routePortfolioWallets } from './routing'
+import { routePortfolioWallets, sanitizeWalletInputs } from './routing'
 import { MAX_PORTFOLIO_WALLETS } from './types'
 
 const G = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN'
@@ -42,5 +42,25 @@ describe('routePortfolioWallets', () => {
     expect(routePortfolioWallets(many).evmAddresses).toHaveLength(
       MAX_PORTFOLIO_WALLETS
     )
+  })
+})
+
+describe('sanitizeWalletInputs', () => {
+  it('drops malformed elements and keeps valid ones', () => {
+    const ok = { address: G, chainFamily: 'stellar' }
+    expect(
+      sanitizeWalletInputs([
+        null,
+        ok,
+        { address: 42, chainFamily: 'evm' },
+        { address: EVM, chainFamily: 'solana' },
+        'x',
+      ])
+    ).toEqual([ok])
+  })
+
+  it('returns [] for non-array input', () => {
+    expect(sanitizeWalletInputs(undefined)).toEqual([])
+    expect(sanitizeWalletInputs({ address: G })).toEqual([])
   })
 })
