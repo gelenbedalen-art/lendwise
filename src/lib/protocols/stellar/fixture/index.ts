@@ -1,4 +1,5 @@
 import { buildProductId } from '@/lib/protocols/blend/common/utils'
+import { toBaseUnits } from '@/lib/protocols/core/toolkit/units'
 import type { StellarPositionsAdapter } from '@/lib/protocols/core/types'
 import { resolveRiskPrices } from '@/lib/risk/prices'
 import {
@@ -112,7 +113,7 @@ export function createStellarFixtureAdapter(
           assetName: r.name,
           assetSymbol: r.symbol,
           assetDecimals: 7,
-          assetAmount: r.collateral.toString(),
+          assetAmount: toBaseUnits(r.collateral, 7),
           assetAmountUsd: usd(r.assetId, r.collateral, p),
           assetLiveAmountUsd: usd(r.assetId, r.collateral, p),
           apy: 0,
