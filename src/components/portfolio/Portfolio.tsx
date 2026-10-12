@@ -15,16 +15,16 @@ import {
   attachRisk,
   orphanRiskRows,
   reportedHealthFactors,
+  walletBalanceRows,
 } from '@/lib/portfolio/view'
 import { summarizeHealth } from '@/lib/risk/summary'
 import { useWalletStore } from '@/stores/walletStore'
 
-import { BorrowingTable, SupplyingTable } from '.'
+import { BorrowingTable, SupplyingTable, WalletBalancesTable } from '.'
 import { HealthSummaryValue } from './HealthFactorValue'
 import { PartialDataBanner } from './PartialDataBanner'
 import PortfolioSidebar from './PortfolioSidebar'
 import { PortfolioSkeleton } from './PortfolioSkeleton'
-import { StellarHoldings } from './StellarHoldings'
 
 export function Portfolio() {
   const { address: evmAddress, isConnected: isEvmConnected } = useAccount()
@@ -163,6 +163,16 @@ export function Portfolio() {
     orphanRiskRows(borrowData, portfolio.riskAccounts)
   )
 
+  const walletData = walletBalanceRows(portfolio.holdings)
+  const pricedWallet = walletData.filter((r) => r.valueUsd !== null)
+  const walletBalances = {
+    valueUsd:
+      pricedWallet.length > 0
+        ? pricedWallet.reduce((acc, r) => acc + (r.valueUsd ?? 0) * rate, 0)
+        : null,
+    count: walletData.length,
+  }
+
   const netPosition =
     portfolioSummary.totalSupplying.value -
     portfolioSummary.totalBorrowing.value
@@ -170,7 +180,11 @@ export function Portfolio() {
   return (
     <div className="flex h-full overflow-hidden">
       {/* Sidebar — desktop only */}
-      <PortfolioSidebar summary={portfolioSummary} health={health} />
+      <PortfolioSidebar
+        summary={portfolioSummary}
+        health={health}
+        walletBalances={walletBalances}
+      />
 
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Mobile summary bar */}
@@ -219,7 +233,6 @@ export function Portfolio() {
         </div>
 
         <PartialDataBanner failures={portfolio.failures} />
-        <StellarHoldings holdings={portfolio.holdings} />
 
         <Tabs
           defaultValue="supply"
@@ -261,6 +274,23 @@ export function Portfolio() {
                 Active loans and collateral positions
               </p>
             </TabsTrigger>
+            <TabsTrigger
+              value="wallet"
+              className="data-[state=active]:bg-card data-[state=active]:border-primary text-muted-foreground hover:text-foreground h-auto cursor-pointer flex-col items-start rounded-none border-b-2 border-transparent px-4 py-3 transition-colors data-[state=active]:shadow-none md:px-8 md:py-5"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-foreground text-sm font-semibold md:text-lg">
+                  <span className="hidden sm:inline">Wallet balances</span>
+                  <span className="sm:hidden">Wallet</span>
+                </span>
+                <span className="bg-background text-muted-foreground rounded-full px-2 py-0.5 text-xs font-semibold">
+                  {walletData.length}
+                </span>
+              </div>
+              <p className="text-muted-foreground mt-0.5 hidden text-xs font-normal sm:block">
+                Assets held in your wallets, not supplied or borrowed
+              </p>
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="supply" className="mt-0 flex-1 overflow-y-auto">
@@ -268,6 +298,9 @@ export function Portfolio() {
           </TabsContent>
           <TabsContent value="borrow" className="mt-0 flex-1 overflow-y-auto">
             <BorrowingTable data={borrowData} />
+          </TabsContent>
+          <TabsContent value="wallet" className="mt-0 flex-1 overflow-y-auto">
+            <WalletBalancesTable data={walletData} />
           </TabsContent>
         </Tabs>
       </div>
