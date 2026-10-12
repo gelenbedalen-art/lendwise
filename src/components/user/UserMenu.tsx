@@ -33,6 +33,7 @@ import { SUPPORTED_CURRENCIES, getCurrencyByCode } from '@/config/currencies'
 import { useCurrency } from '@/contexts'
 import { useStellarWallet } from '@/contexts/StellarWalletContext'
 import { cn, formatAddress } from '@/lib/utils'
+import { isDisplayableActive } from '@/lib/wallet/stellar-wallets'
 import { useWalletStore } from '@/stores/walletStore'
 
 import { ThemeSwitcher } from '../theme/ThemeSwitcher'
@@ -46,7 +47,7 @@ export const UserMenu = () => {
   const [currentView, setCurrentView] = useState<MenuView>('main')
 
   const { wallets } = useWalletStore()
-  const activeWallet = wallets.find((w) => w.isActive)
+  const activeWallet = wallets.find((w) => w.isActive && isDisplayableActive(w))
   const { disconnectStellar } = useStellarWallet()
 
   const handleCurrencySelect = (currencyCode: string) => {

@@ -13,6 +13,10 @@ import {
 } from '@/components/ui/dialog'
 import { identifyWallet } from '@/lib/analytics/identifyWallet'
 import { formatAddress } from '@/lib/utils'
+import {
+  ownsStellarSession,
+  restoredStellarWalletUpdate,
+} from '@/lib/wallet/stellar-wallets'
 import { useWalletStore } from '@/stores/walletStore'
 import type { StellarSession, Wallet } from '@/stores/walletStore'
 
@@ -247,12 +251,10 @@ export function StellarWalletProvider({
         .catch(() => null)
 
       for (const wallet of stellarWallets) {
-        const owned = session?.address === wallet.address ? session : undefined
-        updateWallet(wallet.address, {
-          isConnected: owned !== undefined,
-          isCurrentlyConnected: owned !== undefined && wallet.isActive,
-          stellarSession: owned,
-        })
+        updateWallet(
+          wallet.address,
+          restoredStellarWalletUpdate(wallet, session)
+        )
       }
     }
 
@@ -343,10 +345,17 @@ export function StellarWalletProvider({
   }
 
   const disconnectStellar = async (address: string) => {
+    // Only the wallet holding the session may clear it; removing a sessionless
+    // wallet must not sign out the one that is signed in.
+    const target = useWalletStore
+      .getState()
+      .wallets.find((w) => w.address === address)
     try {
-      await requestJson<{ ok: boolean }>('/api/auth/stellar/session', {
-        method: 'DELETE',
-      })
+      if (ownsStellarSession(target)) {
+        await requestJson<{ ok: boolean }>('/api/auth/stellar/session', {
+          method: 'DELETE',
+        })
+      }
     } catch (err) {
       console.warn('Failed to clear Stellar server session:', err)
     } finally {
