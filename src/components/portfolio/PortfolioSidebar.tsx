@@ -1,5 +1,9 @@
-import { Activity, TrendingDown, TrendingUp } from 'lucide-react'
+import { Activity, TrendingDown, TrendingUp, Wallet } from 'lucide-react'
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts'
+
+import type { HealthSummary } from '@/lib/risk/summary'
+
+import { HealthSummaryValue } from './HealthFactorValue'
 
 type BreakdownItem = { name: string; value: number; color: string }
 
@@ -12,16 +16,21 @@ type PortfolioSummary = {
 
 export default function PortfolioSidebar({
   summary,
+  health,
+  walletBalances,
 }: {
   summary: PortfolioSummary
+  health: HealthSummary
+  walletBalances: {
+    totalUsd: number | null
+    count: number
+    unpriced: number
+    breakdown: BreakdownItem[]
+  }
 }) {
   const { totalSupplying, totalBorrowing, supplyBreakdown, borrowBreakdown } =
     summary
   const netPosition = totalSupplying.value - totalBorrowing.value
-  const healthRatio =
-    totalBorrowing.value > 0
-      ? (totalSupplying.value / totalBorrowing.value).toFixed(2)
-      : '∞'
 
   return (
     <aside className="border-border bg-card/40 hidden w-72 shrink-0 flex-col overflow-y-auto border-r md:flex">
@@ -46,10 +55,7 @@ export default function PortfolioSidebar({
         <div className="mt-1 flex items-center gap-1.5">
           <Activity className="h-3.5 w-3.5 text-emerald-400" />
           <span className="text-muted-foreground text-xs">
-            Health ratio:{' '}
-            <span className="font-mono font-medium text-emerald-400">
-              {healthRatio}
-            </span>
+            Lowest health factor: <HealthSummaryValue summary={health} />
           </span>
         </div>
       </div>
@@ -76,7 +82,13 @@ export default function PortfolioSidebar({
       </div>
 
       {/* Borrow chart */}
-      <div className="px-6 py-5">
+      <div
+        className={
+          walletBalances.count > 0
+            ? 'border-border border-b px-6 py-5'
+            : 'px-6 py-5'
+        }
+      >
         <div className="mb-3 flex items-center justify-between">
           <div>
             <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
@@ -95,6 +107,38 @@ export default function PortfolioSidebar({
         </div>
         <DonutWithLegend data={borrowBreakdown} />
       </div>
+
+      {/* Wallet balances — held assets, not part of Net Position */}
+      {walletBalances.count > 0 && (
+        <div className="px-6 py-5">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+                Wallet Balances
+              </p>
+              <p className="text-muted-foreground text-xs">
+                {walletBalances.count}{' '}
+                {walletBalances.count === 1 ? 'asset' : 'assets'}
+              </p>
+            </div>
+            <div className="text-foreground flex items-center gap-1">
+              <Wallet className="h-3.5 w-3.5" />
+              <span className="font-mono text-lg font-semibold">
+                {walletBalances.totalUsd === null
+                  ? '—'
+                  : `$${walletBalances.totalUsd.toFixed(2)}`}
+              </span>
+            </div>
+          </div>
+          <DonutWithLegend data={walletBalances.breakdown} />
+          {walletBalances.unpriced > 0 && (
+            <p className="text-muted-foreground mt-3 text-xs">
+              {walletBalances.unpriced} unpriced{' '}
+              {walletBalances.unpriced === 1 ? 'asset' : 'assets'} not included
+            </p>
+          )}
+        </div>
+      )}
     </aside>
   )
 }

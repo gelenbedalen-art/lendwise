@@ -1,10 +1,13 @@
 import type { Address } from 'viem'
 
+import { activeProductIds } from '@/lib/db/repositories/products'
 import {
   CHAIN_SLUG_MAP,
   type RegisteredChainId,
   createGraphQLClient,
 } from '@/lib/protocols/core/toolkit'
+import { dedupeInFlight } from '@/lib/protocols/core/toolkit/inflight'
+import type { RiskAccount } from '@/lib/risk/types'
 import { generateSlug } from '@/lib/utils'
 import {
   BorrowPosition,
@@ -27,6 +30,12 @@ import {
   USER_SUPPLY_POSITIONS,
   VAULT_SUPPLY_HISTORY,
 } from './queries'
+import {
+  isPricedMorphoItem,
+  morphoRiskAccount,
+  morphoRiskAccountId,
+  morphoRiskProductId,
+} from './risk'
 
 export const client = createGraphQLClient(MORPHO_V1_API_URL)
 
@@ -127,6 +136,83 @@ export async function getUserSupplyPositions({
   }
 }
 
+type BorrowItem = NonNullable<
+  NonNullable<UserBorrowPositionsQuery['marketPositions']>['items']
+>[number]
+
+async function fetchUserBorrowItems(
+  addresses: Address[]
+): Promise<BorrowItem[]> {
+  // Get all chain IDs from MORPHO_V1_CHAINS
+  const chainIds = Object.keys(MORPHO_V1_CHAINS).map(Number)
+
+  const allItems: BorrowItem[] = []
+  let skip = 0
+  let hasMore = true
+
+  // Fetch all pages until we have all positions
+  while (hasMore) {
+    const { data, error } = await client
+      .query<UserBorrowPositionsQuery>(USER_BORROW_POSITIONS, {
+        where: {
+          chainId_in: chainIds,
+          userAddress_in: [...addresses],
+        },
+        first: 100,
+        skip,
+      })
+      .toPromise()
+
+    if (error) {
+      console.error('Failed to fetch Morpho V1 positions:', error)
+      // Check if it's a timeout error
+      if (error.message?.includes('Time-out') || error.networkError) {
+        console.warn('Morpho V1 API timeout - returning empty positions')
+      }
+      return allItems // Return what we have so far
+    }
+
+    if (!data || !data.marketPositions || !data.marketPositions.items) {
+      break
+    }
+
+    allItems.push(...data.marketPositions.items)
+
+    // Check if there are more pages to fetch
+    const pageInfo = data.marketPositions.pageInfo
+    if (pageInfo && pageInfo.countTotal > skip + pageInfo.count) {
+      skip += pageInfo.count
+    } else {
+      hasMore = false
+    }
+  }
+  return allItems
+}
+
+/** The catalogued borrow productIds among `items`; empty when the lookup fails. */
+async function cataloguedBorrowIds(items: BorrowItem[]): Promise<Set<string>> {
+  const ids = [...new Set(items.flatMap((i) => morphoRiskProductId(i) ?? []))]
+  try {
+    return await activeProductIds(ids)
+  } catch (err) {
+    console.error('[morpho] catalogue lookup failed:', err)
+    return new Set()
+  }
+}
+
+/** Positions, risk accounts and the catalogue check share one read. */
+const fetchUserBorrowReadOnce = dedupeInFlight(
+  (addresses: Address[]) =>
+    addresses
+      .map((a) => a.toLowerCase())
+      .sort()
+      .join(','),
+  async (addresses: Address[]) => {
+    const items = await fetchUserBorrowItems(addresses)
+    return { items, catalogued: await cataloguedBorrowIds(items) }
+  }
+)
+
 export async function getUserBorrowPositions({
   addresses,
 }: {
@@ -138,103 +224,71 @@ export async function getUserBorrowPositions({
   }
 
   try {
-    // Get all chain IDs from MORPHO_V1_CHAINS
-    const chainIds = Object.keys(MORPHO_V1_CHAINS).map(Number)
+    const { items, catalogued } = await fetchUserBorrowReadOnce(addresses)
 
-    const allPositions: BorrowPosition[] = []
-    let skip = 0
-    let hasMore = true
-
-    // Fetch all pages until we have all positions
-    while (hasMore) {
-      const { data, error } = await client
-        .query<UserBorrowPositionsQuery>(USER_BORROW_POSITIONS, {
-          where: {
-            chainId_in: chainIds,
-            userAddress_in: [...addresses],
+    return items.map((position): BorrowPosition => {
+      const network =
+        CHAIN_SLUG_MAP[position.market.morphoBlue.chain.id as RegisteredChainId]
+      if (!network)
+        throw new Error(
+          `No slug registered for chainId ${position.market.morphoBlue.chain.id} — add it to chain-slugs.ts`
+        )
+      return {
+        id: position.id,
+        protocol: 'morpho_v1',
+        network,
+        healthFactor: Number(position.healthFactor),
+        userAddress: position.user.address.toLowerCase(),
+        poolId: position.market.marketId,
+        poolName: `${position.market.collateralAsset?.symbol}/${position.market.loanAsset?.symbol}`,
+        poolAddress: position.market.marketId,
+        poolChainId: position.market.morphoBlue.chain.id,
+        loanAssetAddress: position.market.loanAsset.address,
+        loanAssetName: position.market.loanAsset.name,
+        loanAssetSymbol: position.market.loanAsset.symbol,
+        loanAssetDecimals: position.market.loanAsset.decimals,
+        loanAssetAmount: position.state
+          ? position.state.borrowAssets /
+            Number(`1e${position.market.loanAsset.decimals}`)
+          : 0,
+        loanAssetAmountUsd: position.state?.borrowAssetsUsd ?? 0,
+        loanLiveAssetAmountUsd: position.state?.borrowAssetsUsd ?? 0,
+        loanTimestamp: 0,
+        collaterals: [
+          {
+            address: position.market.collateralAsset?.address,
+            name: position.market.collateralAsset?.name ?? '',
+            symbol: position.market.collateralAsset?.symbol ?? '',
+            decimals: position.market.collateralAsset?.decimals ?? 0,
+            amount: position.state?.collateral,
+            amountUsd: position.state?.collateralUsd ?? 0,
           },
-          first: 100,
-          skip,
-        })
-        .toPromise()
-
-      if (error) {
-        console.error('Failed to fetch Morpho V1 positions:', error)
-        // Check if it's a timeout error
-        if (error.message?.includes('Time-out') || error.networkError) {
-          console.warn('Morpho V1 API timeout - returning empty positions')
-        }
-        return allPositions // Return what we have so far
+        ],
+        apy: position.market.state?.avgBorrowApy
+          ? Number((position.market.state.avgBorrowApy * 100).toFixed(2))
+          : 0,
+        riskAccountId: isPricedMorphoItem(position, catalogued)
+          ? morphoRiskAccountId(position)
+          : undefined,
+        link: `https://app.morpho.org/${position.market.morphoBlue.chain.network.toLowerCase()}/market/${position.market.marketId}/${generateSlug(position.market.collateralAsset?.symbol + '-' + position.market.loanAsset?.symbol)}?subTab=yourPosition`,
       }
-
-      if (!data || !data.marketPositions || !data.marketPositions.items) {
-        break
-      }
-
-      const positions = data.marketPositions.items.map(
-        (position): BorrowPosition => {
-          const network =
-            CHAIN_SLUG_MAP[
-              position.market.morphoBlue.chain.id as RegisteredChainId
-            ]
-          if (!network)
-            throw new Error(
-              `No slug registered for chainId ${position.market.morphoBlue.chain.id} — add it to chain-slugs.ts`
-            )
-          return {
-            id: position.id,
-            protocol: 'morpho_v1',
-            network,
-            healthFactor: Number(position.healthFactor),
-            userAddress: position.user.address.toLowerCase(),
-            poolId: position.market.marketId,
-            poolName: `${position.market.collateralAsset?.symbol}/${position.market.loanAsset?.symbol}`,
-            poolAddress: position.market.marketId,
-            poolChainId: position.market.morphoBlue.chain.id,
-            loanAssetAddress: position.market.loanAsset.address,
-            loanAssetName: position.market.loanAsset.name,
-            loanAssetSymbol: position.market.loanAsset.symbol,
-            loanAssetDecimals: position.market.loanAsset.decimals,
-            loanAssetAmount: position.state
-              ? position.state.borrowAssets /
-                Number(`1e${position.market.loanAsset.decimals}`)
-              : 0,
-            loanAssetAmountUsd: position.state?.borrowAssetsUsd ?? 0,
-            loanLiveAssetAmountUsd: position.state?.borrowAssetsUsd ?? 0,
-            loanTimestamp: 0,
-            collaterals: [
-              {
-                address: position.market.collateralAsset?.address,
-                name: position.market.collateralAsset?.name ?? '',
-                symbol: position.market.collateralAsset?.symbol ?? '',
-                decimals: position.market.collateralAsset?.decimals ?? 0,
-                amount: position.state?.collateral,
-                amountUsd: position.state?.collateralUsd ?? 0,
-              },
-            ],
-            apy: position.market.state?.avgBorrowApy
-              ? Number((position.market.state.avgBorrowApy * 100).toFixed(2))
-              : 0,
-            link: `https://app.morpho.org/${position.market.morphoBlue.chain.network.toLowerCase()}/market/${position.market.marketId}/${generateSlug(position.market.collateralAsset?.symbol + '-' + position.market.loanAsset?.symbol)}?subTab=yourPosition`,
-          }
-        }
-      )
-
-      allPositions.push(...positions)
-
-      // Check if there are more pages to fetch
-      const pageInfo = data.marketPositions.pageInfo
-      if (pageInfo && pageInfo.countTotal > skip + pageInfo.count) {
-        skip += pageInfo.count
-      } else {
-        hasMore = false
-      }
-    }
-    return allPositions
+    })
   } catch (err) {
     console.error('Unexpected error fetching Morpho V1 positions:', err)
     return []
   }
+}
+
+export async function getRiskAccounts({
+  addresses,
+}: {
+  addresses: Address[]
+}): Promise<RiskAccount[]> {
+  if (addresses.length === 0) return []
+  const { items, catalogued } = await fetchUserBorrowReadOnce(addresses)
+  return items.flatMap((item) =>
+    isPricedMorphoItem(item, catalogued) ? (morphoRiskAccount(item) ?? []) : []
+  )
 }
 
 const TIMEFRAME_MAP: Record<TimeframeLabel, TimeseriesInterval> = {

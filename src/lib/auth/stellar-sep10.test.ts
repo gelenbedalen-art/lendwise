@@ -121,6 +121,34 @@ describe('stellar SEP-10 challenge', () => {
       'dashboard-abc123-smarttdev.vercel.app'
     )
   })
+
+  it('accepts the extra hosts listed in STELLAR_SIGN_IN_EXTRA_HOSTS', async () => {
+    process.env.STELLAR_SIGN_IN_EXTRA_HOSTS =
+      'https://lendwise-mainnet.vercel.app/, other.example'
+    const challenge = await issueStellarChallenge({
+      address: user.publicKey(),
+      domain: 'lendwise-mainnet.vercel.app',
+    })
+    expect(challenge.webAuthDomain).toBe('lendwise-mainnet.vercel.app')
+  })
+
+  it('still refuses a host that is not in STELLAR_SIGN_IN_EXTRA_HOSTS', async () => {
+    process.env.STELLAR_SIGN_IN_EXTRA_HOSTS =
+      'https://lendwise-mainnet.vercel.app/, other.example'
+    await expect(
+      issueStellarChallenge({
+        address: user.publicKey(),
+        domain: 'evil.example',
+      })
+    ).rejects.toThrow('not an allowed sign-in domain')
+  })
+
+  it('ignores empty entries in STELLAR_SIGN_IN_EXTRA_HOSTS', async () => {
+    process.env.STELLAR_SIGN_IN_EXTRA_HOSTS = '/, https://'
+    await expect(
+      issueStellarChallenge({ address: user.publicKey(), domain: '' })
+    ).rejects.toThrow('not an allowed sign-in domain')
+  })
 })
 
 describe('stellar SEP-10 verification', () => {

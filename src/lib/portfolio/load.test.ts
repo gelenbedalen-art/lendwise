@@ -1,0 +1,270 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { RiskAccount } from '@/lib/risk/types'
+import type { BorrowPosition, SupplyPosition } from '@/types'
+
+import { type PortfolioDeps, type PositionsSource, loadPortfolio } from './load'
+
+const G = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN'
+const EVM = '0x52908400098527886E0F7030069857D2E4169EE7'
+const wallets = [
+  { address: EVM, chainFamily: 'evm' as const },
+  { address: G, chainFamily: 'stellar' as const },
+]
+
+const supply = (id: string) => ({ id }) as SupplyPosition
+const account = (id: string) => ({ id, reserves: [] }) as unknown as RiskAccount
+
+function source<A extends string>(
+  rows: SupplyPosition[],
+  risk: RiskAccount[] = []
+): PositionsSource<A> & { calls: A[][] } {
+  const calls: A[][] = []
+  return {
+    calls,
+    getUserSupplyPositions: async ({ addresses }) => {
+      calls.push(addresses)
+      return rows
+    },
+    getUserBorrowPositions: async () => [] as BorrowPosition[],
+    getRiskAccounts: async () => risk,
+  }
+}
+
+const failing = (message: string): PositionsSource<string> => ({
+  getUserSupplyPositions: async () => {
+    throw new Error(message)
+  },
+  getUserBorrowPositions: async () => {
+    throw new Error(message)
+  },
+})
+
+function deps(overrides: Partial<PortfolioDeps> = {}): PortfolioDeps {
+  return {
+    evmAdapters: { aave_v3: async () => source([supply('aave')]) },
+    stellarAdapters: { 'blend_v2.1': async () => source([supply('blend')]) },
+    stellarHoldings: async () => [],
+    computeRisk: async (accounts) =>
+      accounts.map((a) => ({
+        id: a.id,
+        protocol: 'p',
+        poolId: 'x',
+        user: 'u',
+        result: { status: 'no-liability' },
+      })),
+    ...overrides,
+  }
+}
+
+describe('loadPortfolio', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('keeps the EVM side and reports the Stellar adapter that failed', async () => {
+    const result = await loadPortfolio(
+      wallets,
+      deps({
+        stellarAdapters: {
+          'blend_v2.1': async () => failing('RPC unreachable'),
+        },
+      })
+    )
+    expect(result.positions.supply.aave_v3).toEqual([supply('aave')])
+    expect(result.failures).toEqual([
+      {
+        chainFamily: 'stellar',
+        source: 'blend_v2.1',
+        message: 'Temporarily unavailable',
+      },
+    ])
+  })
+
+  it('reports Horizon failures under the wallet source', async () => {
+    const result = await loadPortfolio(
+      wallets,
+      deps({
+        stellarHoldings: async () => {
+          throw new Error('Horizon 503')
+        },
+      })
+    )
+    expect(result.positions.supply['blend_v2.1']).toEqual([supply('blend')])
+    expect(result.failures).toEqual([
+      {
+        chainFamily: 'stellar',
+        source: 'stellar_wallet',
+        message: 'Temporarily unavailable',
+      },
+    ])
+  })
+
+  it('hands each family only its own addresses', async () => {
+    const evm = source<`0x${string}`>([])
+    const stellar = source<string>([])
+    await loadPortfolio(
+      wallets,
+      deps({
+        evmAdapters: { aave_v3: async () => evm },
+        stellarAdapters: { 'blend_v2.1': async () => stellar },
+      })
+    )
+    expect(evm.calls).toEqual([[EVM]])
+    expect(stellar.calls).toEqual([[G]])
+  })
+
+  it('computes risk on the accounts of both families', async () => {
+    const computeRisk = vi.fn(async () => [])
+    await loadPortfolio(
+      wallets,
+      deps({
+        evmAdapters: { morpho_v1: async () => source([], [account('evm-1')]) },
+        stellarAdapters: {
+          'blend_v2.1': async () => source([], [account('xlm-1')]),
+        },
+        computeRisk,
+      })
+    )
+    expect(computeRisk).toHaveBeenCalledWith([
+      account('evm-1'),
+      account('xlm-1'),
+    ])
+  })
+
+  it('calls nothing without wallets', async () => {
+    const stellarHoldings = vi.fn()
+    const result = await loadPortfolio([], deps({ stellarHoldings }))
+    expect(result).toEqual({
+      positions: { supply: {}, borrow: {} },
+      holdings: [],
+      riskAccounts: [],
+      failures: [],
+    })
+    expect(stellarHoldings).not.toHaveBeenCalled()
+  })
+
+  it('keeps positions when only the risk read fails', async () => {
+    const result = await loadPortfolio(
+      wallets,
+      deps({
+        evmAdapters: {
+          aave_v3: async () => ({
+            ...source([supply('aave')]),
+            getRiskAccounts: async () => {
+              throw new Error('https://rpc.example/?key=secret')
+            },
+          }),
+        },
+      })
+    )
+    expect(result.positions.supply.aave_v3).toEqual([supply('aave')])
+    expect(result.failures).toEqual([
+      {
+        chainFamily: 'evm',
+        source: 'aave_v3',
+        message: 'Temporarily unavailable',
+      },
+    ])
+    expect(JSON.stringify(result)).not.toContain('secret')
+  })
+
+  it('returns the portfolio without risk when computeRisk throws', async () => {
+    const result = await loadPortfolio(
+      wallets,
+      deps({
+        evmAdapters: {
+          aave_v3: async () => source([supply('aave')], [account('e')]),
+        },
+        computeRisk: async () => {
+          throw new Error('boom')
+        },
+      })
+    )
+    expect(result.riskAccounts).toEqual([])
+    expect(result.positions.supply.aave_v3).toEqual([supply('aave')])
+  })
+
+  it('keeps the other EVM adapter when one rejects', async () => {
+    const result = await loadPortfolio(
+      wallets,
+      deps({
+        evmAdapters: {
+          aave_v3: async () => source([supply('aave')]),
+          morpho_v1: async () => failing('boom'),
+        },
+      })
+    )
+    expect(result.positions.supply.aave_v3).toEqual([supply('aave')])
+    expect(result.failures).toEqual([
+      {
+        chainFamily: 'evm',
+        source: 'morpho_v1',
+        message: 'Temporarily unavailable',
+      },
+    ])
+  })
+
+  describe('source time limit', () => {
+    const never = () => new Promise<never>(() => {})
+
+    it('fails a Stellar adapter that never resolves and keeps the rest', async () => {
+      const result = await loadPortfolio(
+        wallets,
+        deps({
+          sourceTimeoutMs: 20,
+          stellarAdapters: { 'blend_v2.1': never },
+        })
+      )
+      expect(result.positions.supply.aave_v3).toEqual([supply('aave')])
+      expect(result.failures).toEqual([
+        {
+          chainFamily: 'stellar',
+          source: 'blend_v2.1',
+          message: 'Temporarily unavailable',
+        },
+      ])
+    })
+
+    it('fails Stellar holdings that never resolve under the wallet source', async () => {
+      const result = await loadPortfolio(
+        wallets,
+        deps({ sourceTimeoutMs: 20, stellarHoldings: never })
+      )
+      expect(result.positions.supply['blend_v2.1']).toEqual([supply('blend')])
+      expect(result.failures).toEqual([
+        {
+          chainFamily: 'stellar',
+          source: 'stellar_wallet',
+          message: 'Temporarily unavailable',
+        },
+      ])
+    })
+
+    it('keeps positions when only the risk read is still pending', async () => {
+      const result = await loadPortfolio(
+        wallets,
+        deps({
+          sourceTimeoutMs: 20,
+          evmAdapters: {
+            aave_v3: async () => ({
+              ...source([supply('aave')]),
+              getRiskAccounts: never,
+            }),
+          },
+        })
+      )
+      expect(result.positions.supply.aave_v3).toEqual([supply('aave')])
+      expect(result.failures).toEqual([
+        {
+          chainFamily: 'evm',
+          source: 'aave_v3',
+          message: 'Temporarily unavailable',
+        },
+      ])
+    })
+  })
+})

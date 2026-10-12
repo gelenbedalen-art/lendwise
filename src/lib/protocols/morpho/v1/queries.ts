@@ -181,6 +181,7 @@ export const MARKETS_APY = gql`
           borrowAssets
           borrowAssetsUsd
           utilization
+          price
           fee
           rewards {
             asset {

@@ -432,6 +432,16 @@ export async function listActiveProducts(): Promise<
     .where(eq(products.active, true))
 }
 
+/** The subset of `ids` that are active catalogued products. */
+export async function activeProductIds(ids: string[]): Promise<Set<string>> {
+  if (ids.length === 0) return new Set()
+  const rows = await db
+    .select({ id: products.id })
+    .from(products)
+    .where(and(inArray(products.id, ids), eq(products.active, true)))
+  return new Set(rows.map((r) => r.id))
+}
+
 /**
  * Distinct on-chain contract addresses in the product registry for a provider
  * (optionally one version), sorted, values as stored.

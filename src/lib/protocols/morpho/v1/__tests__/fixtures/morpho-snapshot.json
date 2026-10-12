@@ -1,0 +1,35 @@
+{
+  "capturedAt": "2026-10-12T00:08:49.970Z",
+  "items": [
+    {
+      "healthFactor": 1.33816055479928,
+      "user": {
+        "address": "0xc936E848688C9f035Fa0E7a0E4dBcF26a01245f3"
+      },
+      "market": {
+        "marketId": "0xea4bfb18df0ee6bffb7b3f0270899a8adb92ab6b684709634c8276128813cfd4",
+        "lltv": "860000000000000000",
+        "collateralAsset": {
+          "symbol": "weETH",
+          "decimals": 18
+        },
+        "loanAsset": {
+          "symbol": "RLUSD",
+          "decimals": 18
+        },
+        "morphoBlue": {
+          "chain": {
+            "id": 1
+          }
+        },
+        "state": {
+          "price": "2800705355477655193291319029626661244901"
+        }
+      },
+      "state": {
+        "collateral": "19069114722936344852000",
+        "borrowAssets": "34323232381939836757475328"
+      }
+    }
+  ]
+}

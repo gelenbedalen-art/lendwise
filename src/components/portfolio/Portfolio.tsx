@@ -3,19 +3,38 @@
 import { useEffect, useMemo } from 'react'
 
 import { Activity, TrendingDown, TrendingUp } from 'lucide-react'
-import { Address } from 'viem'
 import { useAccount } from 'wagmi'
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { WalletNotConnected } from '@/components/wallet'
 import { protocolVersionName } from '@/config/protocols-meta'
 import { useCurrency } from '@/contexts'
-import { useLoadUserPositions } from '@/hooks/useLoadUserPositions'
+import { useLoadUserPortfolio } from '@/hooks/useLoadUserPortfolio'
+import type { PortfolioWalletInput } from '@/lib/portfolio/types'
+import {
+  attachRisk,
+  orphanRiskRows,
+  reportedHealthFactors,
+  walletBalanceBreakdown,
+  walletBalanceRows,
+} from '@/lib/portfolio/view'
+import { CHAIN_BY_SLUG } from '@/lib/protocols/core/toolkit'
+import { summarizeHealth } from '@/lib/risk/summary'
 import { useWalletStore } from '@/stores/walletStore'
 
-import { BorrowingTable, SupplyingTable } from '.'
+import { BorrowingTable, SupplyingTable, WalletBalancesTable } from '.'
+import { HealthSummaryValue } from './HealthFactorValue'
+import { PartialDataBanner } from './PartialDataBanner'
 import PortfolioSidebar from './PortfolioSidebar'
 import { PortfolioSkeleton } from './PortfolioSkeleton'
+
+/** Chain registry display name for a slug, else the capitalized slug. */
+function networkName(slug: string): string {
+  return (
+    (CHAIN_BY_SLUG as Record<string, { name: string } | undefined>)[slug]
+      ?.name ?? slug.charAt(0).toUpperCase() + slug.slice(1)
+  )
+}
 
 export function Portfolio() {
   const { address: evmAddress, isConnected: isEvmConnected } = useAccount()
@@ -30,23 +49,40 @@ export function Portfolio() {
     [wallets]
   )
   const isConnected = isEvmConnected || !!activeStellarWallet
-  const address = evmAddress ?? activeStellarWallet?.address
 
   const { rate, loading: conversionLoading } = useCurrency()
 
-  const addresses = useMemo(
-    () => wallets.map((wallet) => wallet.address as Address),
-    [wallets]
+  // Every tracked wallet, as before, now tagged with its chain family; the
+  // connected wagmi account is added when the store does not hold it yet.
+  const walletsKey = [
+    ...wallets
+      .filter((w) => w.chainFamily === 'evm' || w.chainFamily === 'stellar')
+      .map((w) => `${w.chainFamily}:${w.address}`),
+    isEvmConnected && evmAddress ? `evm:${evmAddress}` : '',
+  ].join('|')
+
+  const portfolioWallets = useMemo<PortfolioWalletInput[]>(
+    () =>
+      walletsKey
+        .split('|')
+        .filter(Boolean)
+        .map((entry) => {
+          const [chainFamily, address] = entry.split(':')
+          return {
+            chainFamily: chainFamily as PortfolioWalletInput['chainFamily'],
+            address,
+          }
+        }),
+    [walletsKey]
   )
 
-  const { userPositions, fetchUserPositions, isPending, error } =
-    useLoadUserPositions(addresses)
+  const { portfolio, fetchPortfolio, isPending, error } =
+    useLoadUserPortfolio(portfolioWallets)
+  const userPositions = portfolio.positions
 
   useEffect(() => {
-    if (address) {
-      fetchUserPositions()
-    }
-  }, [address])
+    if (portfolioWallets.length > 0) fetchPortfolio()
+  }, [portfolioWallets, fetchPortfolio])
 
   const PROTOCOL_COLORS = [
     '#06B6D4',
@@ -127,23 +163,44 @@ export function Portfolio() {
   }
 
   const supplyData = Object.values(userPositions.supply).flat()
-  const borrowData = Object.values(userPositions.borrow).flat()
+  const borrowData = attachRisk(
+    Object.values(userPositions.borrow).flat(),
+    portfolio.riskAccounts
+  )
+  const health = summarizeHealth(
+    portfolio.riskAccounts,
+    reportedHealthFactors(borrowData),
+    orphanRiskRows(borrowData, portfolio.riskAccounts)
+  )
+
+  const walletData = walletBalanceRows(portfolio.holdings)
+  const walletBreakdown = walletBalanceBreakdown(walletData)
+  const walletBalances = {
+    totalUsd:
+      walletBreakdown.totalUsd === null
+        ? null
+        : walletBreakdown.totalUsd * rate,
+    count: walletData.length,
+    unpriced: walletBreakdown.unpriced,
+    breakdown: walletBreakdown.slices.map((slice, idx) => ({
+      name: networkName(slice.network),
+      value: slice.share,
+      color: PROTOCOL_COLORS[idx % PROTOCOL_COLORS.length],
+    })),
+  }
 
   const netPosition =
     portfolioSummary.totalSupplying.value -
     portfolioSummary.totalBorrowing.value
-  const healthRatio =
-    portfolioSummary.totalBorrowing.value > 0
-      ? (
-          portfolioSummary.totalSupplying.value /
-          portfolioSummary.totalBorrowing.value
-        ).toFixed(2)
-      : '∞'
 
   return (
     <div className="flex h-full overflow-hidden">
       {/* Sidebar — desktop only */}
-      <PortfolioSidebar summary={portfolioSummary} />
+      <PortfolioSidebar
+        summary={portfolioSummary}
+        health={health}
+        walletBalances={walletBalances}
+      />
 
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Mobile summary bar */}
@@ -185,11 +242,13 @@ export function Portfolio() {
             <div className="flex items-center gap-1">
               <Activity className="h-3 w-3 shrink-0 text-emerald-400" />
               <p className="font-mono text-sm font-semibold text-emerald-400">
-                {healthRatio}
+                <HealthSummaryValue summary={health} />
               </p>
             </div>
           </div>
         </div>
+
+        <PartialDataBanner failures={portfolio.failures} />
 
         <Tabs
           defaultValue="supply"
@@ -231,6 +290,23 @@ export function Portfolio() {
                 Active loans and collateral positions
               </p>
             </TabsTrigger>
+            <TabsTrigger
+              value="wallet"
+              className="data-[state=active]:bg-card data-[state=active]:border-primary text-muted-foreground hover:text-foreground h-auto cursor-pointer flex-col items-start rounded-none border-b-2 border-transparent px-4 py-3 transition-colors data-[state=active]:shadow-none md:px-8 md:py-5"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-foreground text-sm font-semibold md:text-lg">
+                  <span className="hidden sm:inline">Wallet balances</span>
+                  <span className="sm:hidden">Wallet</span>
+                </span>
+                <span className="bg-background text-muted-foreground rounded-full px-2 py-0.5 text-xs font-semibold">
+                  {walletData.length}
+                </span>
+              </div>
+              <p className="text-muted-foreground mt-0.5 hidden text-xs font-normal sm:block">
+                Assets held in your wallets, not supplied or borrowed
+              </p>
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="supply" className="mt-0 flex-1 overflow-y-auto">
@@ -238,6 +314,9 @@ export function Portfolio() {
           </TabsContent>
           <TabsContent value="borrow" className="mt-0 flex-1 overflow-y-auto">
             <BorrowingTable data={borrowData} />
+          </TabsContent>
+          <TabsContent value="wallet" className="mt-0 flex-1 overflow-y-auto">
+            <WalletBalancesTable data={walletData} />
           </TabsContent>
         </Tabs>
       </div>

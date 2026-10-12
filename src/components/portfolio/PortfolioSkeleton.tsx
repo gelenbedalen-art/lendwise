@@ -34,6 +34,18 @@ function SidebarSkeleton() {
       </div>
 
       {/* Borrow section */}
+      <div className="border-border border-b px-6 py-5">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="space-y-1.5">
+            <Skeleton className="h-2.5 w-24" />
+            <Skeleton className="h-3 w-16" />
+          </div>
+          <Skeleton className="h-6 w-20" />
+        </div>
+        <DonutSkeleton />
+      </div>
+
+      {/* Wallet balances section */}
       <div className="px-6 py-5">
         <div className="mb-3 flex items-center justify-between">
           <div className="space-y-1.5">
@@ -90,7 +102,7 @@ function MobileSummarySkeleton() {
 function TabBarSkeleton() {
   return (
     <div className="border-border flex border-b">
-      {Array.from({ length: 2 }).map(() => (
+      {Array.from({ length: 3 }).map(() => (
         <div
           key={Math.random()}
           className="space-y-1.5 px-4 py-3 md:px-8 md:py-5"

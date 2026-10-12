@@ -1,6 +1,6 @@
 export * from './useWalletInfo'
 export * from './useTransaction'
-export * from './useLoadUserPositions'
+export * from './useLoadUserPortfolio'
 export * from './useMobile'
 export * from './useCurrencyConverter'
 export * from './useMultiWalletManager'

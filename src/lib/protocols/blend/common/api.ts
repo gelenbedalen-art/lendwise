@@ -3,7 +3,9 @@ import {
   TokenMetadata as BlendTokenMetadata,
   FixedMath,
   Network,
+  type Pool,
   PoolFactoryEventType,
+  PoolUser,
   PoolV1,
   PoolV2,
   Version,
@@ -154,6 +156,19 @@ export async function getPool({
     return await pacedRpc(() => PoolV2.load(network, poolId))
   }
   return await pacedRpc(() => PoolV1.load(network, poolId))
+}
+
+/** A user's positions in one pool, paced like every other read of this module. */
+export async function getPoolUser({
+  poolId,
+  pool,
+  userId,
+}: {
+  poolId: string
+  pool: Pool
+  userId: string
+}): Promise<PoolUser> {
+  return await pacedRpc(() => PoolUser.load(network, poolId, pool, userId))
 }
 
 /**

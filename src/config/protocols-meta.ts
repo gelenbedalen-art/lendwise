@@ -47,10 +47,31 @@ const RETIRED_PROTOCOLS_META: Record<
   },
 }
 
-function metaFor(id: string) {
+/**
+ * Display identity of position sources that are not yield adapters: the
+ * staging fixture. Kept out of PROTOCOLS_META for the same reason as the
+ * retired ones — reconcile and the registries walk that map.
+ */
+export const POSITION_ONLY_PROTOCOLS_META = {
+  stellar_fixture: {
+    displayName: 'Stellar fixture',
+    versionName: 'Stellar fixture',
+    provider: 'stellar_fixture',
+  },
+} as const
+
+export type PositionOnlyProtocol = keyof typeof POSITION_ONLY_PROTOCOLS_META
+
+export function isProtocolName(id: string): id is ProtocolName {
   return id in PROTOCOLS_META
-    ? PROTOCOLS_META[id as ProtocolName]
-    : RETIRED_PROTOCOLS_META[id]
+}
+
+function metaFor(id: string) {
+  if (id in PROTOCOLS_META) return PROTOCOLS_META[id as ProtocolName]
+  if (id in POSITION_ONLY_PROTOCOLS_META) {
+    return POSITION_ONLY_PROTOCOLS_META[id as PositionOnlyProtocol]
+  }
+  return RETIRED_PROTOCOLS_META[id]
 }
 
 /** 'aave_v3' → 'Aave v3'. Version-qualified display name, looked up (not parsed). */

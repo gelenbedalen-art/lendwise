@@ -15,7 +15,7 @@ import { MARKETS_APY, VAULTS_APY } from '@/lib/protocols/morpho/v1/queries'
 import { MORPHO_PROVIDER } from '../common/config'
 import { MORPHO_V1_API_URL, MORPHO_V1_CHAINS } from './config'
 import { morphoMarketWhere, morphoVaultWhere } from './listing'
-import { buildProductId } from './utils'
+import { buildProductId, collateralPriceInLoanAsset } from './utils'
 
 /**
  * Raw base units → whole tokens.
@@ -295,7 +295,13 @@ export async function fetchMorphoV1ApySpot(
           utilizationRate,
           assetPriceUsd,
           collateralAssetsUsd: null, // not exposed in current query
-          priceCollateralInLoanAsset: null, // TODO: derive from collateral state
+          // The market oracle's collateral price — what liquidations use; the
+          // health factor module reads it back from apy_hourly.
+          priceCollateralInLoanAsset: collateralPriceInLoanAsset(
+            state.price,
+            market.loanAsset.decimals,
+            market.collateralAsset?.decimals
+          ),
         } as BorrowMarketState,
       }
 
