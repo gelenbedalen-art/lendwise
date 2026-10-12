@@ -9,6 +9,7 @@ import { MORPHO_V1_CHAINS, MORPHO_V1_INGESTION } from './config'
 import {
   getMarketBorrowHistoryRates,
   getMarketSupplyHistoryRates,
+  getRiskAccounts,
   getUserBorrowPositions,
   getUserSupplyPositions,
 } from './positions'
@@ -34,4 +35,5 @@ export const appAdapter: AppAdapter = {
   getMarketBorrowHistoryRates,
   getSupplyProducts,
   getBorrowProducts,
+  getRiskAccounts,
 }
