@@ -5,6 +5,8 @@ import type { BorrowPosition, SupplyPosition, UserPosition } from '@/types'
 
 import { routePortfolioWallets } from './routing'
 import {
+  EVM_WALLET_SOURCE,
+  type EvmWalletHoldings,
   type PortfolioChainFamily,
   type PortfolioPartialFailure,
   type PortfolioWalletInput,
@@ -31,6 +33,7 @@ type Loaders<A extends string> = Record<
 export interface PortfolioDeps {
   evmAdapters: Loaders<Address>
   stellarAdapters: Loaders<string>
+  evmHoldings(addresses: Address[]): Promise<EvmWalletHoldings>
   stellarHoldings(addresses: string[]): Promise<WalletHolding[]>
   computeRisk(accounts: RiskAccount[]): Promise<RiskAccountResult[]>
   /** Per-source time limit; defaults to `SOURCE_TIMEOUT_MS`. */
@@ -133,6 +136,33 @@ async function loadAdapters<A extends string>(
 const sourceTimeoutMs = (deps: PortfolioDeps) =>
   deps.sourceTimeoutMs ?? SOURCE_TIMEOUT_MS
 
+async function loadEvm(
+  addresses: Address[],
+  deps: PortfolioDeps
+): Promise<FamilyResult> {
+  if (addresses.length === 0) return emptyFamily()
+  const [adapters, holdings] = await Promise.allSettled([
+    loadAdapters('evm', addresses, deps.evmAdapters, sourceTimeoutMs(deps)),
+    withTimeout(deps.evmHoldings(addresses), sourceTimeoutMs(deps)),
+  ])
+  const result =
+    adapters.status === 'fulfilled' ? adapters.value : emptyFamily()
+  if (adapters.status === 'rejected') {
+    result.failures.push(failure('evm', 'evm', adapters.reason))
+  }
+  if (holdings.status === 'fulfilled') {
+    result.holdings = holdings.value.holdings
+    for (const slug of holdings.value.failedNetworks) {
+      result.failures.push(
+        failure('evm', `${EVM_WALLET_SOURCE}:${slug}`, `${slug} unreadable`)
+      )
+    }
+  } else {
+    result.failures.push(failure('evm', EVM_WALLET_SOURCE, holdings.reason))
+  }
+  return result
+}
+
 async function loadStellar(
   addresses: string[],
   deps: PortfolioDeps
@@ -173,16 +203,7 @@ export async function loadPortfolio(
   const { evmAddresses, stellarAddresses } = routePortfolioWallets(wallets)
 
   const families: [PortfolioChainFamily, () => Promise<FamilyResult>][] = [
-    [
-      'evm',
-      () =>
-        loadAdapters(
-          'evm',
-          evmAddresses,
-          deps.evmAdapters,
-          sourceTimeoutMs(deps)
-        ),
-    ],
+    ['evm', () => loadEvm(evmAddresses, deps)],
     ['stellar', () => loadStellar(stellarAddresses, deps)],
   ]
   const settled = await Promise.allSettled(families.map(([, run]) => run()))
