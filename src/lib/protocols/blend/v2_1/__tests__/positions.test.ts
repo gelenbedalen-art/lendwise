@@ -157,7 +157,7 @@ describe('Blend v2.1 positions', () => {
       protocol: 'blend_v2.1',
       poolChainId: -1,
       assetSymbol: 'XLM',
-      assetAmount: '1050',
+      assetAmount: '10500000000',
       assetAmountUsd: 1050 * 0.3,
       apy: 2,
     })

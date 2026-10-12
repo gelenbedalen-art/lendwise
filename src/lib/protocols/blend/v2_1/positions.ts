@@ -3,6 +3,7 @@ import type { PoolUser, PoolV2, Reserve } from '@blend-capital/blend-sdk'
 import { distinctProtocolAddresses } from '@/lib/db/repositories/products'
 import { CHAIN_SLUG_MAP } from '@/lib/protocols/core/toolkit/chain-slugs'
 import { dedupeInFlight } from '@/lib/protocols/core/toolkit/inflight'
+import { toBaseUnits } from '@/lib/protocols/core/toolkit/units'
 import type { StellarPositionsAdapter } from '@/lib/protocols/core/types'
 import { resolveRiskPrices } from '@/lib/risk/prices'
 import {
@@ -160,7 +161,7 @@ export function supplyPositionsFromReading(
         assetName: x.name,
         assetSymbol: x.symbol,
         assetDecimals: x.decimals,
-        assetAmount: amount.toString(),
+        assetAmount: toBaseUnits(amount, x.decimals),
         assetAmountUsd: amountUsd,
         assetLiveAmountUsd: amountUsd,
         apy: x.supplyApy * 100,
