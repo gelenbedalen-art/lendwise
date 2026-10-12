@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
+import { isAddress } from 'viem'
 
 import { loadMarketSupplyHistoryRates } from '@/app/actions'
 import { NetworkBadge } from '@/components/badge/NetworkBadge'
@@ -52,7 +53,7 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { WalletAvatar } from '@/components/wallet/WalletAvatar'
-import { protocolVersionName } from '@/config/protocols-meta'
+import { isProtocolName, protocolVersionName } from '@/config/protocols-meta'
 import { useCurrency } from '@/contexts'
 import { useIsMobile } from '@/hooks/useMobile'
 import { formatCompactCurrency } from '@/lib/format-currency'
@@ -170,6 +171,17 @@ function TableCellViewer({ item }: { item: SupplyPosition }) {
     const option = TIMEFRAME_OPTIONS.find((o) => o.label === timeframeLabel)
     if (!option) return
 
+    // History rates are served by the EVM app adapters only.
+    if (
+      !isAddress(item.assetAddress, { strict: false }) ||
+      !isProtocolName(item.protocol)
+    ) {
+      setRates([])
+      return
+    }
+    const tokenId = item.assetAddress
+    const protocolId = item.protocol
+
     startTransition(async () => {
       setSelectedTimeframe(timeframeLabel)
 
@@ -181,10 +193,10 @@ function TableCellViewer({ item }: { item: SupplyPosition }) {
 
       try {
         const rates = await loadMarketSupplyHistoryRates({
-          protocolId: item.protocol,
+          protocolId,
           chainId: item.poolChainId,
           poolId: item.poolId,
-          tokenId: item.assetAddress,
+          tokenId,
           interval: option.label,
           fromTimestamp,
         })

@@ -8,6 +8,7 @@ import type {
   SupplyMarketState,
   SupplyProduct,
 } from '@/lib/db/types'
+import type { RiskAccount } from '@/lib/risk/types'
 import type {
   BorrowPosition,
   MarketRate,
@@ -234,4 +235,20 @@ export interface AppAdapter {
   getMarketBorrowHistoryRates(p: RateParams): Promise<MarketRate[]>
   getSupplyProducts(): Promise<UiSupplyProduct[]>
   getBorrowProducts(): Promise<UiBorrowProduct[]>
+  /**
+   * Optional: the user's isolated risk accounts, fed to the protocol-agnostic
+   * health factor module (src/lib/risk). Adapters without it keep the health
+   * factor their protocol reports on each BorrowPosition.
+   */
+  getRiskAccounts?(p: { addresses: Address[] }): Promise<RiskAccount[]>
+}
+
+/**
+ * Position contract of a Stellar lending adapter: `G…` addresses in, the same
+ * position and risk-account shapes out as an EVM AppAdapter.
+ */
+export interface StellarPositionsAdapter {
+  getUserSupplyPositions(p: { addresses: string[] }): Promise<SupplyPosition[]>
+  getUserBorrowPositions(p: { addresses: string[] }): Promise<BorrowPosition[]>
+  getRiskAccounts?(p: { addresses: string[] }): Promise<RiskAccount[]>
 }

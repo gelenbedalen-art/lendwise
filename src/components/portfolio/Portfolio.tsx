@@ -3,19 +3,28 @@
 import { useEffect, useMemo } from 'react'
 
 import { Activity, TrendingDown, TrendingUp } from 'lucide-react'
-import { Address } from 'viem'
 import { useAccount } from 'wagmi'
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { WalletNotConnected } from '@/components/wallet'
 import { protocolVersionName } from '@/config/protocols-meta'
 import { useCurrency } from '@/contexts'
-import { useLoadUserPositions } from '@/hooks/useLoadUserPositions'
+import { useLoadUserPortfolio } from '@/hooks/useLoadUserPortfolio'
+import type { PortfolioWalletInput } from '@/lib/portfolio/types'
+import {
+  attachRisk,
+  orphanRiskRows,
+  reportedHealthFactors,
+} from '@/lib/portfolio/view'
+import { summarizeHealth } from '@/lib/risk/summary'
 import { useWalletStore } from '@/stores/walletStore'
 
 import { BorrowingTable, SupplyingTable } from '.'
+import { HealthSummaryValue } from './HealthFactorValue'
+import { PartialDataBanner } from './PartialDataBanner'
 import PortfolioSidebar from './PortfolioSidebar'
 import { PortfolioSkeleton } from './PortfolioSkeleton'
+import { StellarHoldings } from './StellarHoldings'
 
 export function Portfolio() {
   const { address: evmAddress, isConnected: isEvmConnected } = useAccount()
@@ -30,23 +39,40 @@ export function Portfolio() {
     [wallets]
   )
   const isConnected = isEvmConnected || !!activeStellarWallet
-  const address = evmAddress ?? activeStellarWallet?.address
 
   const { rate, loading: conversionLoading } = useCurrency()
 
-  const addresses = useMemo(
-    () => wallets.map((wallet) => wallet.address as Address),
-    [wallets]
+  // Every tracked wallet, as before, now tagged with its chain family; the
+  // connected wagmi account is added when the store does not hold it yet.
+  const walletsKey = [
+    ...wallets
+      .filter((w) => w.chainFamily === 'evm' || w.chainFamily === 'stellar')
+      .map((w) => `${w.chainFamily}:${w.address}`),
+    isEvmConnected && evmAddress ? `evm:${evmAddress}` : '',
+  ].join('|')
+
+  const portfolioWallets = useMemo<PortfolioWalletInput[]>(
+    () =>
+      walletsKey
+        .split('|')
+        .filter(Boolean)
+        .map((entry) => {
+          const [chainFamily, address] = entry.split(':')
+          return {
+            chainFamily: chainFamily as PortfolioWalletInput['chainFamily'],
+            address,
+          }
+        }),
+    [walletsKey]
   )
 
-  const { userPositions, fetchUserPositions, isPending, error } =
-    useLoadUserPositions(addresses)
+  const { portfolio, fetchPortfolio, isPending, error } =
+    useLoadUserPortfolio(portfolioWallets)
+  const userPositions = portfolio.positions
 
   useEffect(() => {
-    if (address) {
-      fetchUserPositions()
-    }
-  }, [address])
+    if (portfolioWallets.length > 0) fetchPortfolio()
+  }, [portfolioWallets, fetchPortfolio])
 
   const PROTOCOL_COLORS = [
     '#06B6D4',
@@ -127,23 +153,24 @@ export function Portfolio() {
   }
 
   const supplyData = Object.values(userPositions.supply).flat()
-  const borrowData = Object.values(userPositions.borrow).flat()
+  const borrowData = attachRisk(
+    Object.values(userPositions.borrow).flat(),
+    portfolio.riskAccounts
+  )
+  const health = summarizeHealth(
+    portfolio.riskAccounts,
+    reportedHealthFactors(borrowData),
+    orphanRiskRows(borrowData, portfolio.riskAccounts)
+  )
 
   const netPosition =
     portfolioSummary.totalSupplying.value -
     portfolioSummary.totalBorrowing.value
-  const healthRatio =
-    portfolioSummary.totalBorrowing.value > 0
-      ? (
-          portfolioSummary.totalSupplying.value /
-          portfolioSummary.totalBorrowing.value
-        ).toFixed(2)
-      : '∞'
 
   return (
     <div className="flex h-full overflow-hidden">
       {/* Sidebar — desktop only */}
-      <PortfolioSidebar summary={portfolioSummary} />
+      <PortfolioSidebar summary={portfolioSummary} health={health} />
 
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Mobile summary bar */}
@@ -185,11 +212,14 @@ export function Portfolio() {
             <div className="flex items-center gap-1">
               <Activity className="h-3 w-3 shrink-0 text-emerald-400" />
               <p className="font-mono text-sm font-semibold text-emerald-400">
-                {healthRatio}
+                <HealthSummaryValue summary={health} />
               </p>
             </div>
           </div>
         </div>
+
+        <PartialDataBanner failures={portfolio.failures} />
+        <StellarHoldings holdings={portfolio.holdings} />
 
         <Tabs
           defaultValue="supply"

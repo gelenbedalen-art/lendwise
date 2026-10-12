@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
+import { isAddress } from 'viem'
 
 import { loadMarketBorrowHistoryRates } from '@/app/actions/market-rates.actions'
 import { NetworkIcon, ProtocolIcon, TokenIcon } from '@/components/icon'
@@ -56,25 +57,27 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { WalletAvatar } from '@/components/wallet/WalletAvatar'
-import { protocolVersionName } from '@/config/protocols-meta'
+import { isProtocolName, protocolVersionName } from '@/config/protocols-meta'
 import { useCurrency } from '@/contexts'
 import { useIsMobile } from '@/hooks/useMobile'
 import { formatCompactCurrency } from '@/lib/format-currency'
+import { type BorrowRow, sortableHealth } from '@/lib/portfolio/view'
 import { formatAddress } from '@/lib/utils'
 import { TIMEFRAME_OPTIONS, TimeframeLabel } from '@/types'
-import { BorrowPosition, MarketRate } from '@/types'
+import { MarketRate } from '@/types'
 
 import { AddressBadge } from '../badge/AddressBadge'
 import { NetworkBadge } from '../badge/NetworkBadge'
 import { ProtocolBadge } from '../badge/ProtocolBadge'
 import { LiquidationRiskBar } from '../borrowing/LiquidationRiskBar'
+import { HealthFactorValue } from './HealthFactorValue'
 import { addressColumn } from './columns.shared'
 
 const createColumns = (
   currency: string,
   _rate: number,
   _isMobile: boolean
-): ColumnDef<BorrowPosition>[] => [
+): ColumnDef<BorrowRow>[] => [
   {
     accessorKey: 'protocol',
     header: 'Protocol',
@@ -91,7 +94,7 @@ const createColumns = (
       isMobileHidden: true,
     },
   },
-  addressColumn<BorrowPosition>(),
+  addressColumn<BorrowRow>(),
   {
     accessorKey: 'poolName',
     header: 'Vault / Pool',
@@ -221,15 +224,19 @@ const createColumns = (
     enableSorting: true,
   },
   {
-    accessorKey: 'healthFactor',
+    id: 'healthFactor',
+    accessorFn: sortableHealth,
     header: ({ column }) => (
       <SortableHeader column={column}>Health</SortableHeader>
     ),
-    cell: ({ row }) => (
-      <span className="font-mono">
-        {Number(row.original.healthFactor).toFixed(2)}
-      </span>
-    ),
+    cell: ({ row }) =>
+      row.original.risk ? (
+        <HealthFactorValue result={row.original.risk} />
+      ) : (
+        <span className="font-mono">
+          {Number(row.original.healthFactor).toFixed(2)}
+        </span>
+      ),
     size: 60,
     enableHiding: false,
     enableSorting: true,
@@ -258,7 +265,7 @@ const chartConfig = {
   },
 } satisfies ChartConfig
 
-function TableCellViewer({ item }: { item: BorrowPosition }) {
+function TableCellViewer({ item }: { item: BorrowRow }) {
   const isMobile = useIsMobile()
   const [rates, setRates] = useState<MarketRate[]>([])
   const [selectedTimeframe, setSelectedTimeframe] =
@@ -268,6 +275,17 @@ function TableCellViewer({ item }: { item: BorrowPosition }) {
   const handleLoadRates = async (timeframeLabel: TimeframeLabel) => {
     const option = TIMEFRAME_OPTIONS.find((o) => o.label === timeframeLabel)
     if (!option) return
+
+    // History rates are served by the EVM app adapters only.
+    if (
+      !isAddress(item.loanAssetAddress, { strict: false }) ||
+      !isProtocolName(item.protocol)
+    ) {
+      setRates([])
+      return
+    }
+    const tokenId = item.loanAssetAddress
+    const protocolId = item.protocol
 
     startTransition(async () => {
       setSelectedTimeframe(timeframeLabel)
@@ -280,10 +298,10 @@ function TableCellViewer({ item }: { item: BorrowPosition }) {
 
       try {
         const rates = await loadMarketBorrowHistoryRates({
-          protocolId: item.protocol,
+          protocolId,
           chainId: item.poolChainId,
           poolId: item.poolId,
-          tokenId: item.loanAssetAddress,
+          tokenId,
           interval: option.label,
           fromTimestamp,
         })
@@ -462,7 +480,7 @@ function TableCellViewer({ item }: { item: BorrowPosition }) {
   )
 }
 
-export function BorrowingTable({ data }: { data: BorrowPosition[] }) {
+export function BorrowingTable({ data }: { data: BorrowRow[] }) {
   const { baseCurrency, rate } = useCurrency()
   const isMobile = useIsMobile()
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])

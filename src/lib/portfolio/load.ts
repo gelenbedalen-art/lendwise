@@ -1,0 +1,231 @@
+import type { Address } from 'viem'
+
+import type { RiskAccount, RiskAccountResult } from '@/lib/risk/types'
+import type { BorrowPosition, SupplyPosition, UserPosition } from '@/types'
+
+import { routePortfolioWallets } from './routing'
+import {
+  type PortfolioChainFamily,
+  type PortfolioPartialFailure,
+  type PortfolioWalletInput,
+  STELLAR_WALLET_SOURCE,
+  type StellarHolding,
+  type UserPortfolioResult,
+  emptyUserPositions,
+  mergeUserPositions,
+} from './types'
+
+/** What the merge needs from any adapter, EVM or Stellar. */
+export interface PositionsSource<A extends string> {
+  getUserSupplyPositions(p: { addresses: A[] }): Promise<SupplyPosition[]>
+  getUserBorrowPositions(p: { addresses: A[] }): Promise<BorrowPosition[]>
+  getRiskAccounts?(p: { addresses: A[] }): Promise<RiskAccount[]>
+}
+
+type Loaders<A extends string> = Record<
+  string,
+  () => Promise<PositionsSource<A>>
+>
+
+export interface PortfolioDeps {
+  evmAdapters: Loaders<Address>
+  stellarAdapters: Loaders<string>
+  stellarHoldings(addresses: string[]): Promise<StellarHolding[]>
+  computeRisk(accounts: RiskAccount[]): Promise<RiskAccountResult[]>
+  /** Per-source time limit; defaults to `SOURCE_TIMEOUT_MS`. */
+  sourceTimeoutMs?: number
+}
+
+/** Longest a single source may take before it becomes a partial failure. */
+export const SOURCE_TIMEOUT_MS = 12_000
+
+/**
+ * Rejects when `promise` has not settled in `ms`. The timer is cleared once
+ * the race settles, so nothing keeps the process alive.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const expiry = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`timed out after ${ms}ms`)),
+      Math.max(0, ms)
+    )
+  })
+  return Promise.race([promise, expiry]).finally(() => clearTimeout(timer))
+}
+
+interface FamilyResult {
+  positions: UserPosition
+  riskAccounts: RiskAccount[]
+  holdings: StellarHolding[]
+  failures: PortfolioPartialFailure[]
+}
+
+const emptyFamily = (): FamilyResult => ({
+  positions: emptyUserPositions(),
+  riskAccounts: [],
+  holdings: [],
+  failures: [],
+})
+
+const GENERIC_FAILURE_MESSAGE = 'Temporarily unavailable'
+
+/**
+ * Upstream errors can carry RPC URLs with keys or internal hosts: the raw
+ * reason stays in the server logs, the client only gets a generic message.
+ */
+function failure(
+  chainFamily: PortfolioChainFamily,
+  source: string,
+  reason: unknown
+): PortfolioPartialFailure {
+  console.error(`[portfolio] ${chainFamily}/${source} failed:`, reason)
+  return { chainFamily, source, message: GENERIC_FAILURE_MESSAGE }
+}
+
+/** Every adapter of a family, each settled on its own. */
+async function loadAdapters<A extends string>(
+  chainFamily: PortfolioChainFamily,
+  addresses: A[],
+  adapters: Loaders<A>,
+  timeoutMs: number
+): Promise<FamilyResult> {
+  const result = emptyFamily()
+  if (addresses.length === 0) return result
+
+  const entries = Object.entries(adapters)
+  const settled = await Promise.allSettled(
+    entries.map(async ([, load]) => {
+      const deadline = Date.now() + timeoutMs
+      let riskRead:
+        | Promise<
+            { ok: true; value: RiskAccount[] } | { ok: false; reason: unknown }
+          >
+        | undefined
+      const positions = async () => {
+        const adapter = await load()
+        // Concurrent on purpose: adapters dedupe the shared upstream read.
+        // Risk settles apart: its failure must not discard good positions.
+        riskRead = Promise.resolve(
+          adapter.getRiskAccounts
+            ? adapter.getRiskAccounts({ addresses })
+            : ([] as RiskAccount[])
+        ).then(
+          (value) => ({ ok: true as const, value }),
+          (reason: unknown) => ({ ok: false as const, reason })
+        )
+        const [supply, borrow] = await Promise.all([
+          adapter.getUserSupplyPositions({ addresses }),
+          adapter.getUserBorrowPositions({ addresses }),
+        ])
+        return { supply, borrow }
+      }
+      const { supply, borrow } = await withTimeout(positions(), timeoutMs)
+      const risk = await withTimeout(
+        riskRead as NonNullable<typeof riskRead>,
+        deadline - Date.now()
+      ).catch((reason: unknown) => ({ ok: false as const, reason }))
+      return { supply, borrow, risk }
+    })
+  )
+
+  settled.forEach((s, i) => {
+    const source = entries[i][0]
+    if (s.status === 'fulfilled') {
+      result.positions.supply[source] = s.value.supply
+      result.positions.borrow[source] = s.value.borrow
+      if (s.value.risk.ok) result.riskAccounts.push(...s.value.risk.value)
+      else
+        result.failures.push(failure(chainFamily, source, s.value.risk.reason))
+    } else {
+      result.failures.push(failure(chainFamily, source, s.reason))
+    }
+  })
+  return result
+}
+
+const sourceTimeoutMs = (deps: PortfolioDeps) =>
+  deps.sourceTimeoutMs ?? SOURCE_TIMEOUT_MS
+
+async function loadStellar(
+  addresses: string[],
+  deps: PortfolioDeps
+): Promise<FamilyResult> {
+  if (addresses.length === 0) return emptyFamily()
+  const [adapters, holdings] = await Promise.allSettled([
+    loadAdapters(
+      'stellar',
+      addresses,
+      deps.stellarAdapters,
+      sourceTimeoutMs(deps)
+    ),
+    withTimeout(deps.stellarHoldings(addresses), sourceTimeoutMs(deps)),
+  ])
+  const result =
+    adapters.status === 'fulfilled' ? adapters.value : emptyFamily()
+  if (adapters.status === 'rejected') {
+    result.failures.push(failure('stellar', 'stellar', adapters.reason))
+  }
+  if (holdings.status === 'fulfilled') result.holdings = holdings.value
+  else {
+    result.failures.push(
+      failure('stellar', STELLAR_WALLET_SOURCE, holdings.reason)
+    )
+  }
+  return result
+}
+
+/**
+ * EVM and Stellar positions in one result. Each family — and each source in
+ * it — settles on its own: a source that rejects becomes a partial failure and
+ * the rest of the portfolio still renders.
+ */
+export async function loadPortfolio(
+  wallets: PortfolioWalletInput[],
+  deps: PortfolioDeps
+): Promise<UserPortfolioResult> {
+  const { evmAddresses, stellarAddresses } = routePortfolioWallets(wallets)
+
+  const families: [PortfolioChainFamily, () => Promise<FamilyResult>][] = [
+    [
+      'evm',
+      () =>
+        loadAdapters(
+          'evm',
+          evmAddresses,
+          deps.evmAdapters,
+          sourceTimeoutMs(deps)
+        ),
+    ],
+    ['stellar', () => loadStellar(stellarAddresses, deps)],
+  ]
+  const settled = await Promise.allSettled(families.map(([, run]) => run()))
+
+  const loaded: FamilyResult[] = []
+  const failures: PortfolioPartialFailure[] = []
+  settled.forEach((s, i) => {
+    const chainFamily = families[i][0]
+    if (s.status === 'fulfilled') {
+      loaded.push(s.value)
+      failures.push(...s.value.failures)
+    } else {
+      failures.push(failure(chainFamily, chainFamily, s.reason))
+    }
+  })
+
+  const accounts = loaded.flatMap((f) => f.riskAccounts)
+  let riskAccounts: RiskAccountResult[] = []
+  if (accounts.length > 0) {
+    try {
+      riskAccounts = await deps.computeRisk(accounts)
+    } catch (reason) {
+      console.error('[portfolio] risk computation failed:', reason)
+    }
+  }
+  return {
+    positions: mergeUserPositions(...loaded.map((f) => f.positions)),
+    holdings: loaded.flatMap((f) => f.holdings),
+    riskAccounts,
+    failures,
+  }
+}
