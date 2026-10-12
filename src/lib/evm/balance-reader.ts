@@ -20,7 +20,7 @@ export interface ChainBalances {
   tokens: (bigint | null)[][]
 }
 
-/** Calldata bytes per multicall chunk: about 50 `balanceOf` per `eth_call`. */
+/** Calldata bytes per multicall chunk: about 220 `balanceOf` per `eth_call`. */
 export const MULTICALL_CHUNK_BYTES = 8_192
 
 type Pair = { owner: Address; token: Address }
