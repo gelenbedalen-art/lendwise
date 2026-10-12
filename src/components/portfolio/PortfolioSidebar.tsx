@@ -1,6 +1,10 @@
 import { Activity, TrendingDown, TrendingUp } from 'lucide-react'
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts'
 
+import type { HealthSummary } from '@/lib/risk/summary'
+
+import { HealthSummaryValue } from './HealthFactorValue'
+
 type BreakdownItem = { name: string; value: number; color: string }
 
 type PortfolioSummary = {
@@ -12,16 +16,14 @@ type PortfolioSummary = {
 
 export default function PortfolioSidebar({
   summary,
+  health,
 }: {
   summary: PortfolioSummary
+  health: HealthSummary
 }) {
   const { totalSupplying, totalBorrowing, supplyBreakdown, borrowBreakdown } =
     summary
   const netPosition = totalSupplying.value - totalBorrowing.value
-  const healthRatio =
-    totalBorrowing.value > 0
-      ? (totalSupplying.value / totalBorrowing.value).toFixed(2)
-      : '∞'
 
   return (
     <aside className="border-border bg-card/40 hidden w-72 shrink-0 flex-col overflow-y-auto border-r md:flex">
@@ -46,10 +48,7 @@ export default function PortfolioSidebar({
         <div className="mt-1 flex items-center gap-1.5">
           <Activity className="h-3.5 w-3.5 text-emerald-400" />
           <span className="text-muted-foreground text-xs">
-            Health ratio:{' '}
-            <span className="font-mono font-medium text-emerald-400">
-              {healthRatio}
-            </span>
+            Lowest health factor: <HealthSummaryValue summary={health} />
           </span>
         </div>
       </div>
