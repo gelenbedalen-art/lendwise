@@ -14,8 +14,8 @@ export interface BalanceRequest {
 }
 
 export interface ChainBalances {
-  /** Native balance per owner, in `owners` order. */
-  native: bigint[]
+  /** Native balance per owner, in `owners` order; null = that read failed. */
+  native: (bigint | null)[]
   /** `tokens[i][j]` = balance of `owners[i]` in `tokens[j]`; null = that read failed. */
   tokens: (bigint | null)[][]
 }
@@ -23,54 +23,65 @@ export interface ChainBalances {
 /** Calldata bytes per multicall chunk: about 220 `balanceOf` per `eth_call`. */
 export const MULTICALL_CHUNK_BYTES = 8_192
 
-type Pair = { owner: Address; token: Address }
-
-async function readTokenBalances(
-  client: BalanceClient,
-  pairs: Pair[],
-  multicall3: Address | null
-): Promise<(bigint | null)[]> {
-  if (pairs.length === 0) return []
-  if (multicall3) {
-    const results = await client.multicall({
-      contracts: pairs.map(({ owner, token }) => ({
-        address: token,
-        abi: erc20Abi,
-        functionName: 'balanceOf' as const,
-        args: [owner] as const,
-      })),
-      allowFailure: true,
-      multicallAddress: multicall3,
-      batchSize: MULTICALL_CHUNK_BYTES,
-    })
-    return results.map((r) =>
-      r.status === 'success' ? (r.result as bigint) : null
-    )
-  }
-  return Promise.all(
-    pairs.map(({ owner, token }) =>
-      client
-        .readContract({
-          address: token,
-          abi: erc20Abi,
-          functionName: 'balanceOf',
-          args: [owner],
-        })
-        .then(
-          (balance) => balance as bigint,
-          () => null
-        )
-    )
-  )
-}
+/** multicall3's native balance view — not in viem's multicall3Abi. */
+const getEthBalanceAbi = [
+  {
+    type: 'function',
+    name: 'getEthBalance',
+    stateMutability: 'view',
+    inputs: [{ name: 'addr', type: 'address' }],
+    outputs: [{ name: 'balance', type: 'uint256' }],
+  },
+] as const
 
 /**
- * Native and catalogue-token balances of every owner on one chain. A native
- * read that fails rejects the chain. A token read that fails is null, unless
- * every token read failed: that is the RPC, not a token, and the chain
- * rejects — multicall's `allowFailure` would otherwise show an empty wallet.
+ * One multicall per chain: for each owner, `getEthBalance` then every
+ * `balanceOf`. A failed call is null; if every call failed that is the RPC,
+ * not the wallet, and the chain rejects.
  */
-export async function readChainBalances(
+async function readWithMulticall(
+  client: BalanceClient,
+  req: BalanceRequest,
+  multicall3: Address
+): Promise<ChainBalances> {
+  const contracts = req.owners.flatMap((owner) => [
+    {
+      address: multicall3,
+      abi: getEthBalanceAbi,
+      functionName: 'getEthBalance' as const,
+      args: [owner] as const,
+    },
+    ...req.tokens.map((token) => ({
+      address: token,
+      abi: erc20Abi,
+      functionName: 'balanceOf' as const,
+      args: [owner] as const,
+    })),
+  ])
+  if (contracts.length === 0) return { native: [], tokens: [] }
+  const results = await client.multicall({
+    contracts,
+    allowFailure: true,
+    multicallAddress: multicall3,
+    batchSize: MULTICALL_CHUNK_BYTES,
+  })
+  if (results.every((r) => r.status !== 'success')) {
+    throw new Error(`every multicall call failed (${results.length} calls)`)
+  }
+  const values = results.map((r) =>
+    r.status === 'success' ? (r.result as bigint) : null
+  )
+  const stride = req.tokens.length + 1
+  return {
+    native: req.owners.map((_, i) => values[i * stride]),
+    tokens: req.owners.map((_, i) =>
+      values.slice(i * stride + 1, (i + 1) * stride)
+    ),
+  }
+}
+
+/** Without multicall3: `getBalance` per owner, `balanceOf` per pair. */
+async function readOneByOne(
   client: BalanceClient,
   req: BalanceRequest
 ): Promise<ChainBalances> {
@@ -79,7 +90,21 @@ export async function readChainBalances(
   )
   const [native, flat] = await Promise.all([
     Promise.all(req.owners.map((address) => client.getBalance({ address }))),
-    readTokenBalances(client, pairs, req.multicall3),
+    Promise.all(
+      pairs.map(({ owner, token }) =>
+        client
+          .readContract({
+            address: token,
+            abi: erc20Abi,
+            functionName: 'balanceOf',
+            args: [owner],
+          })
+          .then(
+            (balance) => balance as bigint,
+            () => null
+          )
+      )
+    ),
   ])
   if (pairs.length > 0 && flat.every((b) => b === null)) {
     throw new Error(`every balanceOf failed (${pairs.length} calls)`)
@@ -89,4 +114,22 @@ export async function readChainBalances(
     native,
     tokens: req.owners.map((_, i) => flat.slice(i * width, (i + 1) * width)),
   }
+}
+
+/**
+ * Native and catalogue-token balances of every owner on one chain. With
+ * multicall3 the natives (`getEthBalance`) and the tokens share one
+ * multicall, so a chain costs one `eth_call` per chunk: a failed call is
+ * null, and the chain rejects only when every call failed. Without it, a
+ * native read that fails rejects the chain, a failed `balanceOf` is null,
+ * and the chain rejects when every `balanceOf` failed — the RPC, not a
+ * token — since it would otherwise show an empty wallet.
+ */
+export async function readChainBalances(
+  client: BalanceClient,
+  req: BalanceRequest
+): Promise<ChainBalances> {
+  return req.multicall3
+    ? readWithMulticall(client, req, req.multicall3)
+    : readOneByOne(client, req)
 }

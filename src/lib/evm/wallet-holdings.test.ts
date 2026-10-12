@@ -208,6 +208,58 @@ describe('getEvmWalletHoldings', () => {
     await expect(getEvmWalletHoldings([A], d)).rejects.toThrow('db down')
   })
 
+  it('skips a native that could not be read and keeps the token', async () => {
+    const d = deps(
+      byChain({
+        linea: { native: [null], tokens: [[2_500_000n, 0n]] },
+        monad: { native: [0n], tokens: [[]] },
+      })
+    )
+    const r = await getEvmWalletHoldings([A], d)
+    expect(r.holdings).toEqual([
+      expect.objectContaining({ assetType: 'erc20', code: 'USDC' }),
+    ])
+  })
+
+  it('reads at most `concurrency` chains at a time, keeping chain order', async () => {
+    const many = [1, 2, 3, 4, 5].map((n) => chain(n, `c${n}`))
+    let inFlight = 0
+    let peak = 0
+    const d = deps(
+      async () => {
+        inFlight++
+        peak = Math.max(peak, inFlight)
+        await new Promise((r) => setTimeout(r, 5))
+        inFlight--
+        return { native: [10n ** 18n], tokens: [[]] }
+      },
+      { chains: many, concurrency: 2, chainTimeoutMs: 1_000 }
+    )
+    const r = await getEvmWalletHoldings([A], d)
+    expect(peak).toBe(2)
+    expect(r.holdings.map((h) => h.network)).toEqual([
+      'c1',
+      'c2',
+      'c3',
+      'c4',
+      'c5',
+    ])
+  })
+
+  it('starts a chain time limit when its read starts, not while it waits', async () => {
+    const many = [1, 2, 3].map((n) => chain(n, `c${n}`))
+    const d = deps(
+      async () => {
+        await new Promise((r) => setTimeout(r, 30))
+        return { native: [10n ** 18n], tokens: [[]] }
+      },
+      { chains: many, concurrency: 1, chainTimeoutMs: 50 }
+    )
+    const r = await getEvmWalletHoldings([A], d)
+    expect(r.failedNetworks).toEqual([])
+    expect(r.holdings).toHaveLength(3)
+  })
+
   it('reads nothing without an owner', async () => {
     const d = deps(byChain({}))
     expect(await getEvmWalletHoldings([], d)).toEqual({

@@ -1,7 +1,11 @@
 import type { Address } from 'viem'
 import { describe, expect, it, vi } from 'vitest'
 
-import { type BalanceClient, readChainBalances } from './balance-reader'
+import {
+  type BalanceClient,
+  MULTICALL_CHUNK_BYTES,
+  readChainBalances,
+} from './balance-reader'
 
 const A = '0x00000000000000000000000000000000000000a1' as Address
 const B = '0x00000000000000000000000000000000000000b2' as Address
@@ -22,11 +26,13 @@ function client(over: Record<string, unknown> = {}) {
 }
 
 describe('readChainBalances', () => {
-  it('reads tokens in one multicall when the chain has multicall3', async () => {
+  it('reads natives and tokens in one multicall when the chain has multicall3', async () => {
     const c = client({
       multicall: vi.fn(async () => [
+        { status: 'success', result: 10n },
         { status: 'success', result: 1n },
         { status: 'failure', error: new Error('revert') },
+        { status: 'failure', error: new Error('no native') },
         { status: 'success', result: 3n },
         { status: 'success', result: 0n },
       ]),
@@ -37,7 +43,7 @@ describe('readChainBalances', () => {
       multicall3: MC,
     })
     expect(r).toEqual({
-      native: [10n, 20n],
+      native: [10n, null],
       tokens: [
         [1n, null],
         [3n, 0n],
@@ -47,17 +53,24 @@ describe('readChainBalances', () => {
     const args = c.multicall.mock.calls[0][0]
     expect(args.multicallAddress).toBe(MC)
     expect(args.allowFailure).toBe(true)
+    expect(args.batchSize).toBe(MULTICALL_CHUNK_BYTES)
     expect(
-      args.contracts.map((x: { address: Address; args: Address[] }) => [
-        x.address,
-        x.args[0],
-      ])
+      args.contracts.map(
+        (x: { functionName: string; address: Address; args: Address[] }) => [
+          x.functionName,
+          x.address,
+          x.args[0],
+        ]
+      )
     ).toEqual([
-      [T1, A],
-      [T2, A],
-      [T1, B],
-      [T2, B],
+      ['getEthBalance', MC, A],
+      ['balanceOf', T1, A],
+      ['balanceOf', T2, A],
+      ['getEthBalance', MC, B],
+      ['balanceOf', T1, B],
+      ['balanceOf', T2, B],
     ])
+    expect(c.getBalance).not.toHaveBeenCalled()
     expect(c.readContract).not.toHaveBeenCalled()
   })
 
@@ -83,36 +96,71 @@ describe('readChainBalances', () => {
     expect(c.multicall).not.toHaveBeenCalled()
   })
 
-  it('fails the chain when every token read failed', async () => {
-    const c = client({
-      multicall: vi.fn(async () => [
-        { status: 'failure', error: new Error('rpc down') },
-        { status: 'failure', error: new Error('rpc down') },
-      ]),
-    })
+  it('fails the chain when every multicall call failed', async () => {
+    const fail = { status: 'failure', error: new Error('rpc down') }
+    const c = client({ multicall: vi.fn(async () => [fail, fail, fail]) })
     await expect(
       readChainBalances(c, { owners: [A], tokens: [T1, T2], multicall3: MC })
+    ).rejects.toThrow(/every multicall call failed \(3 calls\)/)
+  })
+
+  it('fails the chain when every token read failed without multicall3', async () => {
+    const c = client({
+      readContract: vi.fn(async () => {
+        throw new Error('rpc down')
+      }),
+    })
+    await expect(
+      readChainBalances(c, { owners: [A], tokens: [T1, T2], multicall3: null })
     ).rejects.toThrow(/every balanceOf failed/)
   })
 
-  it('fails the chain when a native read fails', async () => {
+  it('fails the chain when a native read fails without multicall3', async () => {
     const c = client({
       getBalance: vi.fn(async () => {
         throw new Error('rpc down')
       }),
-      multicall: vi.fn(async () => [{ status: 'success', result: 1n }]),
+      readContract: vi.fn(async () => 1n),
     })
     await expect(
-      readChainBalances(c, { owners: [A], tokens: [T1], multicall3: MC })
+      readChainBalances(c, { owners: [A], tokens: [T1], multicall3: null })
     ).rejects.toThrow('rpc down')
   })
 
-  it('reads only natives when the chain has no catalogue token', async () => {
-    const c = client()
+  it('reads only natives, in one multicall, when there is no catalogue token', async () => {
+    const c = client({
+      multicall: vi.fn(async () => [
+        { status: 'success', result: 10n },
+        { status: 'success', result: 20n },
+      ]),
+    })
     const r = await readChainBalances(c, {
       owners: [A, B],
       tokens: [],
       multicall3: MC,
+    })
+    expect(r).toEqual({ native: [10n, 20n], tokens: [[], []] })
+    expect(c.multicall).toHaveBeenCalledTimes(1)
+    expect(
+      c.multicall.mock.calls[0][0].contracts.map(
+        (x: { functionName: string; args: Address[] }) => [
+          x.functionName,
+          x.args[0],
+        ]
+      )
+    ).toEqual([
+      ['getEthBalance', A],
+      ['getEthBalance', B],
+    ])
+    expect(c.getBalance).not.toHaveBeenCalled()
+  })
+
+  it('reads only natives with getBalance when there is no multicall3 and no token', async () => {
+    const c = client()
+    const r = await readChainBalances(c, {
+      owners: [A, B],
+      tokens: [],
+      multicall3: null,
     })
     expect(r).toEqual({ native: [10n, 20n], tokens: [[], []] })
     expect(c.multicall).not.toHaveBeenCalled()

@@ -11,6 +11,7 @@ import {
 import type { CatalogToken } from './holdings-catalog'
 import { holdingPriceKey } from './price-key'
 import { redactRpcSecrets } from './redact'
+import { settleWithConcurrency } from './settle-with-concurrency'
 
 /** One tx chain, ready to read. */
 export interface HoldingsChain {
@@ -33,11 +34,16 @@ export interface EvmHoldingsDeps {
   ): Promise<Map<string, number>>
   /** Per-chain limit; defaults to EVM_CHAIN_TIMEOUT_MS. */
   chainTimeoutMs?: number
+  /** Chains read at a time; defaults to EVM_CHAIN_CONCURRENCY. */
+  concurrency?: number
   read?: typeof readChainBalances
 }
 
 /** Longest one chain may take before it counts as failed. */
 export const EVM_CHAIN_TIMEOUT_MS = 8_000
+
+/** Chains read at once: keeps a portfolio load's burst under the Infura key's rate limit. */
+export const EVM_CHAIN_CONCURRENCY = 4
 
 /** Below this a balance shows as 0 at the table's 7 decimals: not a holding. */
 export const MIN_DISPLAY_BALANCE = 1e-7
@@ -99,8 +105,9 @@ function chainHoldings(
 }
 
 /**
- * Native and catalogue-token balances of every owner on every chain. Each
- * chain settles on its own, under its own time limit: a failed chain is
+ * Native and catalogue-token balances of every owner on every chain, a few
+ * chains at a time. Each chain settles on its own, under its own time limit
+ * that starts when its read starts: a failed chain is
  * named in `failedNetworks` and the others are still returned. Prices are
  * read alongside; without them the balances come back unpriced.
  */
@@ -130,8 +137,10 @@ export async function getEvmWalletHoldings(
       return new Map<string, number>()
     })
 
-  const settled = await Promise.allSettled(
-    deps.chains.map(async (chain) => {
+  const settled = await settleWithConcurrency(
+    deps.chains,
+    deps.concurrency ?? EVM_CHAIN_CONCURRENCY,
+    async (chain) => {
       const chainTokens = tokens.filter((t) => t.chainId === chain.id)
       const balances = await withTimeout(
         read(chain.client, {
@@ -142,7 +151,7 @@ export async function getEvmWalletHoldings(
         timeoutMs
       )
       return chainHoldings(chain, owners, chainTokens, balances)
-    })
+    }
   )
   const prices = await priceRead
 
