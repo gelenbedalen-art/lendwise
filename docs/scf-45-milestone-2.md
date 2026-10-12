@@ -5,10 +5,10 @@ Evidence for the two Tranche 2 deliverables of LendWise's
 (Tranche 2, "Testnet", $12,430): each success criterion, and where to check it — in this public
 repository, on a staging environment, and on [lendwise.fi](https://lendwise.fi).
 
-| Deliverable                                                                                                                        | Success criterion                                                                                                                                                                                                           | Status                                                                 |
-| ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| [1 — Standardized health-factor & risk module, portfolio UI](#1--standardized-health-factor--risk-module-portfolio-ui) ($5,650)    | Unit-test suite passing in CI over multiple reserve/oracle scenarios including an unpriced asset; on staging, a fixture Stellar adapter shows a computed health factor for a Stellar address, and "unknown" without a price | Delivered (staging)                                                    |
-| [2 — EVM + Stellar portfolio merge with graceful degradation](#2--evm--stellar-portfolio-merge-with-graceful-degradation) ($6,780) | EVM Aave position and Stellar USDC in the same portfolio view; with the Stellar endpoint unreachable, the page still renders the EVM side with the partial-data indicator                                                   | Delivered (staging) — lendwise.fi check pending the production release |
+| Deliverable                                                                                                                        | Success criterion                                                                                                                                                                                                           | Status    |
+| ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| [1 — Standardized health-factor & risk module, portfolio UI](#1--standardized-health-factor--risk-module-portfolio-ui) ($5,650)    | Unit-test suite passing in CI over multiple reserve/oracle scenarios including an unpriced asset; on staging, a fixture Stellar adapter shows a computed health factor for a Stellar address, and "unknown" without a price | Delivered |
+| [2 — EVM + Stellar portfolio merge with graceful degradation](#2--evm--stellar-portfolio-merge-with-graceful-degradation) ($6,780) | EVM Aave position and Stellar USDC in the same portfolio view; with the Stellar endpoint unreachable, the page still renders the EVM side with the partial-data indicator                                                   | Delivered |
 
 **Staging:** [lendwise-mainnet.vercel.app](https://lendwise-mainnet.vercel.app)
 (custom domain of the `mainnet` branch preview). **CI:** the latest green run on `mainnet`,
@@ -147,11 +147,16 @@ Preview-only environment variables; the fixture and price levers are ignored in 
 
 ---
 
-## Pending
+## In production on lendwise.fi
 
-The lendwise.fi capture (an EVM Aave position and Stellar USDC in one view) will be added once
-`mainnet` is released to production, which is held until the Tranche 1 review on lendwise.fi
-completes.
+Captured on [lendwise.fi](https://lendwise.fi) after the release of `main` at `3e8963c`, with the
+EVM wallet `0xb09303f65801e1d995f7f3838ae60a3d3b0a3f28` and the Stellar wallet
+`GDHYIHAZ5URVB5TUKLREMPFGH4AYMIMON5KHXKKNYLTYGLUECF4OKV33` connected: the Aave v3 positions on Linea
+and the Stellar side in the same view — the Stellar wallet balances in the sidebar, and a real
+Blend v2.1 supply position (1 USDC in the Fixed v2.1 pool) read live from Stellar mainnet by the
+Blend v2.1 adapter. The staging fixture is not loaded in production.
+
+![lendwise.fi portfolio: Aave v3 Linea positions, a Blend v2.1 Stellar supply position and the Stellar wallet balances in one view](scf-45/t2-lendwise-merged.png)
 
 ## Related
 
