@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import type { StellarHolding } from '@/lib/portfolio/types'
 import type { RiskAccountResult } from '@/lib/risk/types'
 import type { BorrowPosition } from '@/types'
 
@@ -9,6 +10,7 @@ import {
   orphanRiskRows,
   reportedHealthFactors,
   sortableHealth,
+  walletBalanceRows,
 } from './view'
 
 const row = (p: Partial<BorrowPosition>) =>
@@ -103,5 +105,66 @@ describe('portfolio view helpers', () => {
     ]
     expect(orphanRiskRows(rows, [ok('c', 2)])).toBe(2)
     expect(orphanRiskRows(rows, [ok('a', 2), ok('b', 2), ok('c', 2)])).toBe(0)
+  })
+})
+
+describe('walletBalanceRows', () => {
+  const holding = (h: Partial<StellarHolding>): StellarHolding => ({
+    owner: 'GOWNER',
+    assetType: 'credit',
+    code: 'USDC',
+    issuer: 'GISSUER',
+    balance: 1,
+    priceUsd: 1,
+    valueUsd: 1,
+    ...h,
+  })
+
+  it('maps holdings to stellar rows', () => {
+    const rows = walletBalanceRows([
+      holding({
+        code: 'USDC',
+        issuer: 'GISSUER',
+        balance: 12.5,
+        valueUsd: 12.5,
+      }),
+    ])
+    expect(rows).toEqual([
+      {
+        id: 'GOWNER:USDC:GISSUER',
+        network: 'stellar',
+        userAddress: 'GOWNER',
+        assetCode: 'USDC',
+        issuer: 'GISSUER',
+        balance: 12.5,
+        valueUsd: 12.5,
+      },
+    ])
+  })
+
+  it('uses a native id and null issuer for XLM', () => {
+    const [r] = walletBalanceRows([
+      holding({ assetType: 'native', code: 'XLM', issuer: null }),
+    ])
+    expect(r.id).toBe('GOWNER:XLM:native')
+    expect(r.issuer).toBeNull()
+  })
+
+  it('sorts by value desc, unpriced last, then by code', () => {
+    const rows = walletBalanceRows([
+      holding({ code: 'ZZZ', issuer: 'A', valueUsd: null, priceUsd: null }),
+      holding({ code: 'AAA', issuer: 'B', valueUsd: null, priceUsd: null }),
+      holding({ code: 'LOW', issuer: 'C', valueUsd: 1 }),
+      holding({ code: 'HIGH', issuer: 'D', valueUsd: 50 }),
+    ])
+    expect(rows.map((r) => r.assetCode)).toEqual(['HIGH', 'LOW', 'AAA', 'ZZZ'])
+  })
+
+  it('keeps ids unique for the same code with different issuers', () => {
+    const rows = walletBalanceRows([
+      holding({ issuer: 'G1' }),
+      holding({ issuer: 'G2' }),
+    ])
+    expect(new Set(rows.map((r) => r.id)).size).toBe(2)
   })
 })

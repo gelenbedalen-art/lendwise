@@ -17,9 +17,11 @@ type PortfolioSummary = {
 export default function PortfolioSidebar({
   summary,
   health,
+  walletBalances,
 }: {
   summary: PortfolioSummary
   health: HealthSummary
+  walletBalances: { valueUsd: number | null; count: number }
 }) {
   const { totalSupplying, totalBorrowing, supplyBreakdown, borrowBreakdown } =
     summary
@@ -75,7 +77,13 @@ export default function PortfolioSidebar({
       </div>
 
       {/* Borrow chart */}
-      <div className="px-6 py-5">
+      <div
+        className={
+          walletBalances.count > 0
+            ? 'border-border border-b px-6 py-5'
+            : 'px-6 py-5'
+        }
+      >
         <div className="mb-3 flex items-center justify-between">
           <div>
             <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
@@ -94,6 +102,24 @@ export default function PortfolioSidebar({
         </div>
         <DonutWithLegend data={borrowBreakdown} />
       </div>
+
+      {/* Wallet balances — held assets, not part of Net Position */}
+      {walletBalances.count > 0 && (
+        <div className="px-6 py-5">
+          <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+            Wallet Balances
+          </p>
+          <p className="text-foreground mt-2 font-mono text-lg font-semibold">
+            {walletBalances.valueUsd === null
+              ? '—'
+              : `$${walletBalances.valueUsd.toFixed(2)}`}
+          </p>
+          <p className="text-muted-foreground text-xs">
+            {walletBalances.count}{' '}
+            {walletBalances.count === 1 ? 'asset' : 'assets'}
+          </p>
+        </div>
+      )}
     </aside>
   )
 }
