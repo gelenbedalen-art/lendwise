@@ -6,13 +6,19 @@ import {
   isDisplayableActive,
   restoredStellarWalletUpdate,
   shouldClearStellarSession,
+  signedInDuringRestore,
 } from './stellar-wallets'
 
-const session = (address: string): StellarSession => ({
+const NOW = 1_000_000
+const session = (
+  address: string,
+  overrides: Partial<StellarSession> = {}
+): StellarSession => ({
   address,
   networkPassphrase: 'Public Global Stellar Network ; September 2015',
-  issuedAt: 1,
-  expiresAt: 2,
+  issuedAt: NOW - 100,
+  expiresAt: NOW + 100,
+  ...overrides,
 })
 
 const wallet = (overrides: Partial<Wallet> = {}): Wallet => ({
@@ -72,8 +78,14 @@ describe('isDisplayableActive', () => {
       isDisplayableActive(wallet({ stellarSession: session('GBBB') }))
     ).toBe(false)
     expect(
-      isDisplayableActive(wallet({ stellarSession: session('GAAA') }))
+      isDisplayableActive(wallet({ stellarSession: session('GAAA') }), NOW)
     ).toBe(true)
+    expect(
+      isDisplayableActive(
+        wallet({ stellarSession: session('GAAA', { expiresAt: NOW }) }),
+        NOW
+      )
+    ).toBe(false)
   })
 
   it('keeps EVM wallets', () => {
@@ -98,5 +110,33 @@ describe('shouldClearStellarSession', () => {
     expect(
       shouldClearStellarSession('GAAA', { ok: true, sessionAddress: 'GBBB' })
     ).toBe(false)
+  })
+})
+
+describe('signedInDuringRestore', () => {
+  it('does not skip a persisted stale session (unchanged issuedAt)', () => {
+    const w = wallet({ stellarSession: session('GAAA') })
+    expect(signedInDuringRestore(w, { ...w })).toBe(false)
+    // server answers with another address or none: restore update downgrades
+    expect(restoredStellarWalletUpdate(w, session('GBBB'))).toMatchObject({
+      isConnected: false,
+      stellarSession: undefined,
+    })
+    expect(restoredStellarWalletUpdate(w, null)).toMatchObject({
+      isConnected: false,
+    })
+  })
+
+  it('skips a session issued during the await', () => {
+    const before = wallet({ stellarSession: undefined })
+    const after = wallet({ stellarSession: session('GAAA') })
+    expect(signedInDuringRestore(before, after)).toBe(true)
+    expect(
+      signedInDuringRestore(
+        wallet({ stellarSession: session('GAAA') }),
+        wallet({ stellarSession: session('GAAA', { issuedAt: NOW }) })
+      )
+    ).toBe(true)
+    expect(signedInDuringRestore(before, wallet())).toBe(false)
   })
 })

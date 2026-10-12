@@ -16,6 +16,7 @@ import { formatAddress } from '@/lib/utils'
 import {
   restoredStellarWalletUpdate,
   shouldClearStellarSession,
+  signedInDuringRestore,
 } from '@/lib/wallet/stellar-wallets'
 import { useWalletStore } from '@/stores/walletStore'
 import type { StellarSession, Wallet } from '@/stores/walletStore'
@@ -250,12 +251,12 @@ export function StellarWalletProvider({
         .then((r) => r.session)
         .catch(() => null)
 
-      // Re-read after the await: skip wallets signed in meanwhile.
+      // Re-read after the await: skip only wallets signed in meanwhile.
       const current = useWalletStore.getState().wallets
       for (const wallet of stellarWallets) {
         const latest = current.find((w) => w.address === wallet.address)
         if (!latest) continue
-        if (latest.stellarSession?.address === latest.address) continue
+        if (signedInDuringRestore(wallet, latest)) continue
         updateWallet(
           wallet.address,
           restoredStellarWalletUpdate(latest, session)

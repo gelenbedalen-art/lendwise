@@ -36,12 +36,31 @@ export function shouldClearStellarSession(
   return server.sessionAddress === address
 }
 
-/** Whether an active wallet may be shown as the header wallet. */
-export function isDisplayableActive(
-  wallet: Pick<Wallet, 'address' | 'chainFamily' | 'stellarSession'>
+/**
+ * True when the wallet was signed in while the restore request was in flight:
+ * its session now exists and differs (by issuedAt) from the pre-await one.
+ */
+export function signedInDuringRestore(
+  before: Pick<Wallet, 'stellarSession'> | undefined,
+  after: Pick<Wallet, 'stellarSession'> | undefined
 ): boolean {
+  const next = after?.stellarSession
+  if (!next) return false
+  const prev = before?.stellarSession
+  return !prev || prev.issuedAt !== next.issuedAt
+}
+
+/**
+ * Whether an active wallet may be shown as the header wallet. A Stellar
+ * wallet needs its own, unexpired session (expiresAt is in epoch seconds).
+ */
+export function isDisplayableActive(
+  wallet: Pick<Wallet, 'address' | 'chainFamily' | 'stellarSession'>,
+  now: number = Math.floor(Date.now() / 1000)
+): boolean {
+  if (wallet.chainFamily !== 'stellar') return true
+  const session = wallet.stellarSession
   return (
-    wallet.chainFamily !== 'stellar' ||
-    wallet.stellarSession?.address === wallet.address
+    !!session && session.address === wallet.address && session.expiresAt > now
   )
 }
