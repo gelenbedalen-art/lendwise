@@ -92,13 +92,19 @@ function hostOf(value: string | undefined): string | null {
 /**
  * The hosts this deployment answers on, from the system variables Vercel sets
  * on every deployment — the production domain, the branch URL and the
- * deployment URL — plus localhost outside production. Nothing to configure.
+ * deployment URL — plus localhost outside production. Extra hosts (custom
+ * domains attached to a branch or project, which Vercel exposes in no
+ * variable) come from `STELLAR_SIGN_IN_EXTRA_HOSTS`, comma-separated. Only
+ * hosts this deployment actually answers on may be listed there.
  */
 function allowedDomains(): Set<string> {
   const hosts = [
     process.env.VERCEL_PROJECT_PRODUCTION_URL,
     process.env.VERCEL_BRANCH_URL,
     process.env.VERCEL_URL,
+    ...(process.env.STELLAR_SIGN_IN_EXTRA_HOSTS ?? '')
+      .split(',')
+      .map((h) => h.trim()),
   ].map(hostOf)
   if (process.env.NODE_ENV !== 'production')
     hosts.push('localhost', '127.0.0.1')
