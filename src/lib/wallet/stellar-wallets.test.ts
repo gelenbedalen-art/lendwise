@@ -4,8 +4,8 @@ import type { StellarSession, Wallet } from '@/stores/walletStore'
 
 import {
   isDisplayableActive,
-  ownsStellarSession,
   restoredStellarWalletUpdate,
+  shouldClearStellarSession,
 } from './stellar-wallets'
 
 const session = (address: string): StellarSession => ({
@@ -62,26 +62,41 @@ describe('restoredStellarWalletUpdate', () => {
 })
 
 describe('isDisplayableActive', () => {
-  it('excludes sessionless Stellar wallets but keeps EVM', () => {
-    expect(isDisplayableActive(wallet({ isConnected: false }))).toBe(false)
-    expect(isDisplayableActive(wallet({ isConnected: true }))).toBe(true)
+  it('requires a Stellar wallet to hold its own session', () => {
+    expect(
+      isDisplayableActive(
+        wallet({ isConnected: true, stellarSession: undefined })
+      )
+    ).toBe(false)
+    expect(
+      isDisplayableActive(wallet({ stellarSession: session('GBBB') }))
+    ).toBe(false)
+    expect(
+      isDisplayableActive(wallet({ stellarSession: session('GAAA') }))
+    ).toBe(true)
+  })
+
+  it('keeps EVM wallets', () => {
     expect(
       isDisplayableActive(wallet({ chainFamily: 'evm', isConnected: false }))
     ).toBe(true)
   })
 })
 
-describe('ownsStellarSession', () => {
-  it('is true only for a matching session address', () => {
+describe('shouldClearStellarSession', () => {
+  it('fails closed', () => {
+    expect(shouldClearStellarSession('GAAA', { ok: false })).toBe(true)
     expect(
-      ownsStellarSession(wallet({ stellarSession: session('GAAA') }))
+      shouldClearStellarSession('GAAA', { ok: true, sessionAddress: null })
     ).toBe(true)
     expect(
-      ownsStellarSession(wallet({ stellarSession: session('GBBB') }))
+      shouldClearStellarSession('GAAA', { ok: true, sessionAddress: 'GAAA' })
+    ).toBe(true)
+  })
+
+  it('skips only when the session belongs to another address', () => {
+    expect(
+      shouldClearStellarSession('GAAA', { ok: true, sessionAddress: 'GBBB' })
     ).toBe(false)
-    expect(ownsStellarSession(wallet({ stellarSession: undefined }))).toBe(
-      false
-    )
-    expect(ownsStellarSession(undefined)).toBe(false)
   })
 })

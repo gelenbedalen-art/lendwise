@@ -24,16 +24,24 @@ export function restoredStellarWalletUpdate(
   }
 }
 
-/** True when this wallet holds the signed-in SEP-10 session. */
-export function ownsStellarSession(
-  wallet: Pick<Wallet, 'address' | 'stellarSession'> | undefined
+/**
+ * Fail closed: skip clearing the server session only when it is known to
+ * belong to a different address.
+ */
+export function shouldClearStellarSession(
+  address: string,
+  server: { ok: true; sessionAddress: string | null } | { ok: false }
 ): boolean {
-  return !!wallet && wallet.stellarSession?.address === wallet.address
+  if (!server.ok || server.sessionAddress === null) return true
+  return server.sessionAddress === address
 }
 
 /** Whether an active wallet may be shown as the header wallet. */
 export function isDisplayableActive(
-  wallet: Pick<Wallet, 'chainFamily' | 'isConnected' | 'isActive'>
+  wallet: Pick<Wallet, 'address' | 'chainFamily' | 'stellarSession'>
 ): boolean {
-  return wallet.chainFamily !== 'stellar' || wallet.isConnected
+  return (
+    wallet.chainFamily !== 'stellar' ||
+    wallet.stellarSession?.address === wallet.address
+  )
 }

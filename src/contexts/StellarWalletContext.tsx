@@ -14,8 +14,8 @@ import {
 import { identifyWallet } from '@/lib/analytics/identifyWallet'
 import { formatAddress } from '@/lib/utils'
 import {
-  ownsStellarSession,
   restoredStellarWalletUpdate,
+  shouldClearStellarSession,
 } from '@/lib/wallet/stellar-wallets'
 import { useWalletStore } from '@/stores/walletStore'
 import type { StellarSession, Wallet } from '@/stores/walletStore'
@@ -250,10 +250,15 @@ export function StellarWalletProvider({
         .then((r) => r.session)
         .catch(() => null)
 
+      // Re-read after the await: skip wallets signed in meanwhile.
+      const current = useWalletStore.getState().wallets
       for (const wallet of stellarWallets) {
+        const latest = current.find((w) => w.address === wallet.address)
+        if (!latest) continue
+        if (latest.stellarSession?.address === latest.address) continue
         updateWallet(
           wallet.address,
-          restoredStellarWalletUpdate(wallet, session)
+          restoredStellarWalletUpdate(latest, session)
         )
       }
     }
@@ -345,13 +350,18 @@ export function StellarWalletProvider({
   }
 
   const disconnectStellar = async (address: string) => {
-    // Only the wallet holding the session may clear it; removing a sessionless
-    // wallet must not sign out the one that is signed in.
-    const target = useWalletStore
-      .getState()
-      .wallets.find((w) => w.address === address)
+    // Fail closed: skip the DELETE only when the server session is known to
+    // belong to a different wallet.
     try {
-      if (ownsStellarSession(target)) {
+      const server = await requestJson<Sep10SessionResponse>(
+        '/api/auth/stellar/session'
+      )
+        .then((r) => ({
+          ok: true as const,
+          sessionAddress: r.session?.address ?? null,
+        }))
+        .catch(() => ({ ok: false as const }))
+      if (shouldClearStellarSession(address, server)) {
         await requestJson<{ ok: boolean }>('/api/auth/stellar/session', {
           method: 'DELETE',
         })
