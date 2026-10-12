@@ -24,3 +24,18 @@ export function buildProductId(
   const productType = kind === 'supply' ? 'vault' : 'market'
   return `morpho:v1:${network}:${productType}:${address.toLowerCase()}:${kind}`
 }
+
+/**
+ * A Morpho market's oracle price of one collateral token, in loan tokens.
+ * `MarketState.price` is scaled by 10^(36 + loanDecimals − collateralDecimals).
+ */
+export function collateralPriceInLoanAsset(
+  price: unknown,
+  loanDecimals: number,
+  collateralDecimals: number | null | undefined
+): number | null {
+  if (price == null || collateralDecimals == null) return null
+  const raw = Number(price)
+  if (!Number.isFinite(raw) || raw <= 0) return null
+  return raw / 10 ** (36 + loanDecimals - collateralDecimals)
+}
