@@ -187,4 +187,84 @@ describe('loadPortfolio', () => {
     expect(result.riskAccounts).toEqual([])
     expect(result.positions.supply.aave_v3).toEqual([supply('aave')])
   })
+
+  it('keeps the other EVM adapter when one rejects', async () => {
+    const result = await loadPortfolio(
+      wallets,
+      deps({
+        evmAdapters: {
+          aave_v3: async () => source([supply('aave')]),
+          morpho_v1: async () => failing('boom'),
+        },
+      })
+    )
+    expect(result.positions.supply.aave_v3).toEqual([supply('aave')])
+    expect(result.failures).toEqual([
+      {
+        chainFamily: 'evm',
+        source: 'morpho_v1',
+        message: 'Temporarily unavailable',
+      },
+    ])
+  })
+
+  describe('source time limit', () => {
+    const never = () => new Promise<never>(() => {})
+
+    it('fails a Stellar adapter that never resolves and keeps the rest', async () => {
+      const result = await loadPortfolio(
+        wallets,
+        deps({
+          sourceTimeoutMs: 20,
+          stellarAdapters: { 'blend_v2.1': never },
+        })
+      )
+      expect(result.positions.supply.aave_v3).toEqual([supply('aave')])
+      expect(result.failures).toEqual([
+        {
+          chainFamily: 'stellar',
+          source: 'blend_v2.1',
+          message: 'Temporarily unavailable',
+        },
+      ])
+    })
+
+    it('fails Stellar holdings that never resolve under the wallet source', async () => {
+      const result = await loadPortfolio(
+        wallets,
+        deps({ sourceTimeoutMs: 20, stellarHoldings: never })
+      )
+      expect(result.positions.supply['blend_v2.1']).toEqual([supply('blend')])
+      expect(result.failures).toEqual([
+        {
+          chainFamily: 'stellar',
+          source: 'stellar_wallet',
+          message: 'Temporarily unavailable',
+        },
+      ])
+    })
+
+    it('keeps positions when only the risk read is still pending', async () => {
+      const result = await loadPortfolio(
+        wallets,
+        deps({
+          sourceTimeoutMs: 20,
+          evmAdapters: {
+            aave_v3: async () => ({
+              ...source([supply('aave')]),
+              getRiskAccounts: never,
+            }),
+          },
+        })
+      )
+      expect(result.positions.supply.aave_v3).toEqual([supply('aave')])
+      expect(result.failures).toEqual([
+        {
+          chainFamily: 'evm',
+          source: 'aave_v3',
+          message: 'Temporarily unavailable',
+        },
+      ])
+    })
+  })
 })

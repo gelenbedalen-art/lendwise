@@ -12,6 +12,9 @@ export interface HorizonBalance {
   asset_issuer?: string
 }
 
+/** Longest a Horizon account read may take before it fails. */
+export const HORIZON_TIMEOUT_MS = 8_000
+
 function horizonUrl(): string {
   return (
     process.env.STELLAR_HORIZON_URL?.trim() || 'https://horizon.stellar.org'
@@ -21,9 +24,12 @@ function horizonUrl(): string {
 /** An unfunded account (404) holds nothing; any other failure throws. */
 export async function fetchHorizonBalances(
   address: string,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  timeoutMs: number = HORIZON_TIMEOUT_MS
 ): Promise<HorizonBalance[]> {
-  const res = await fetchImpl(`${horizonUrl()}/accounts/${address}`)
+  const res = await fetchImpl(`${horizonUrl()}/accounts/${address}`, {
+    signal: AbortSignal.timeout(timeoutMs),
+  })
   if (res.status === 404) return []
   if (!res.ok) throw new Error(`Horizon ${res.status} for ${address}`)
   const body = (await res.json()) as { balances?: HorizonBalance[] }
@@ -73,6 +79,7 @@ export async function getStellarWalletHoldings(
   addresses: string[],
   deps: {
     fetchImpl?: typeof fetch
+    timeoutMs?: number
     price?: (symbol: string) => Promise<number | null>
   } = {}
 ): Promise<StellarHolding[]> {
@@ -82,7 +89,10 @@ export async function getStellarWalletHoldings(
   const holdings = (
     await Promise.all(
       addresses.map(async (a) =>
-        holdingsFromBalances(a, await fetchHorizonBalances(a, fetchImpl))
+        holdingsFromBalances(
+          a,
+          await fetchHorizonBalances(a, fetchImpl, deps.timeoutMs)
+        )
       )
     )
   ).flat()

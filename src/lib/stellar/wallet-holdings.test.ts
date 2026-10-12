@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   CIRCLE_USDC_ISSUER,
+  HORIZON_TIMEOUT_MS,
   type HorizonBalance,
   getStellarWalletHoldings,
   holdingsFromBalances,
@@ -76,6 +77,29 @@ describe('getStellarWalletHoldings', () => {
         price: vi.fn(),
       })
     ).rejects.toThrow('Horizon 503')
+  })
+
+  it('passes an abort signal and rejects when Horizon never answers', async () => {
+    expect(HORIZON_TIMEOUT_MS).toBe(8_000)
+    const fetchImpl = vi.fn(
+      (_url: unknown, init?: RequestInit) =>
+        new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(init.signal?.reason)
+          )
+        })
+    ) as unknown as typeof fetch
+    await expect(
+      getStellarWalletHoldings([G], {
+        fetchImpl,
+        timeoutMs: 20,
+        price: vi.fn(),
+      })
+    ).rejects.toThrow()
+    expect(fetchImpl).toHaveBeenCalledWith(
+      expect.stringContaining(G),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    )
   })
 
   it('keeps balances when a price lookup throws', async () => {

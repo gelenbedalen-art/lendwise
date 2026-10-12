@@ -32,6 +32,26 @@ export interface PortfolioDeps {
   stellarAdapters: Loaders<string>
   stellarHoldings(addresses: string[]): Promise<StellarHolding[]>
   computeRisk(accounts: RiskAccount[]): Promise<RiskAccountResult[]>
+  /** Per-source time limit; defaults to `SOURCE_TIMEOUT_MS`. */
+  sourceTimeoutMs?: number
+}
+
+/** Longest a single source may take before it becomes a partial failure. */
+export const SOURCE_TIMEOUT_MS = 12_000
+
+/**
+ * Rejects when `promise` has not settled in `ms`. The timer is cleared once
+ * the race settles, so nothing keeps the process alive.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const expiry = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`timed out after ${ms}ms`)),
+      Math.max(0, ms)
+    )
+  })
+  return Promise.race([promise, expiry]).finally(() => clearTimeout(timer))
 }
 
 interface FamilyResult {
@@ -67,7 +87,8 @@ function failure(
 async function loadAdapters<A extends string>(
   chainFamily: PortfolioChainFamily,
   addresses: A[],
-  adapters: Loaders<A>
+  adapters: Loaders<A>,
+  timeoutMs: number
 ): Promise<FamilyResult> {
   const result = emptyFamily()
   if (addresses.length === 0) return result
@@ -75,22 +96,36 @@ async function loadAdapters<A extends string>(
   const entries = Object.entries(adapters)
   const settled = await Promise.allSettled(
     entries.map(async ([, load]) => {
-      const adapter = await load()
-      // Concurrent on purpose: adapters dedupe the shared upstream read.
-      // Risk settles apart: its failure must not discard good positions.
-      const riskRead = Promise.resolve(
-        adapter.getRiskAccounts
-          ? adapter.getRiskAccounts({ addresses })
-          : ([] as RiskAccount[])
-      ).then(
-        (value) => ({ ok: true as const, value }),
-        (reason: unknown) => ({ ok: false as const, reason })
-      )
-      const [supply, borrow] = await Promise.all([
-        adapter.getUserSupplyPositions({ addresses }),
-        adapter.getUserBorrowPositions({ addresses }),
-      ])
-      return { supply, borrow, risk: await riskRead }
+      const deadline = Date.now() + timeoutMs
+      let riskRead:
+        | Promise<
+            { ok: true; value: RiskAccount[] } | { ok: false; reason: unknown }
+          >
+        | undefined
+      const positions = async () => {
+        const adapter = await load()
+        // Concurrent on purpose: adapters dedupe the shared upstream read.
+        // Risk settles apart: its failure must not discard good positions.
+        riskRead = Promise.resolve(
+          adapter.getRiskAccounts
+            ? adapter.getRiskAccounts({ addresses })
+            : ([] as RiskAccount[])
+        ).then(
+          (value) => ({ ok: true as const, value }),
+          (reason: unknown) => ({ ok: false as const, reason })
+        )
+        const [supply, borrow] = await Promise.all([
+          adapter.getUserSupplyPositions({ addresses }),
+          adapter.getUserBorrowPositions({ addresses }),
+        ])
+        return { supply, borrow }
+      }
+      const { supply, borrow } = await withTimeout(positions(), timeoutMs)
+      const risk = await withTimeout(
+        riskRead as NonNullable<typeof riskRead>,
+        deadline - Date.now()
+      ).catch((reason: unknown) => ({ ok: false as const, reason }))
+      return { supply, borrow, risk }
     })
   )
 
@@ -109,14 +144,22 @@ async function loadAdapters<A extends string>(
   return result
 }
 
+const sourceTimeoutMs = (deps: PortfolioDeps) =>
+  deps.sourceTimeoutMs ?? SOURCE_TIMEOUT_MS
+
 async function loadStellar(
   addresses: string[],
   deps: PortfolioDeps
 ): Promise<FamilyResult> {
   if (addresses.length === 0) return emptyFamily()
   const [adapters, holdings] = await Promise.allSettled([
-    loadAdapters('stellar', addresses, deps.stellarAdapters),
-    deps.stellarHoldings(addresses),
+    loadAdapters(
+      'stellar',
+      addresses,
+      deps.stellarAdapters,
+      sourceTimeoutMs(deps)
+    ),
+    withTimeout(deps.stellarHoldings(addresses), sourceTimeoutMs(deps)),
   ])
   const result =
     adapters.status === 'fulfilled' ? adapters.value : emptyFamily()
@@ -144,7 +187,16 @@ export async function loadPortfolio(
   const { evmAddresses, stellarAddresses } = routePortfolioWallets(wallets)
 
   const families: [PortfolioChainFamily, () => Promise<FamilyResult>][] = [
-    ['evm', () => loadAdapters('evm', evmAddresses, deps.evmAdapters)],
+    [
+      'evm',
+      () =>
+        loadAdapters(
+          'evm',
+          evmAddresses,
+          deps.evmAdapters,
+          sourceTimeoutMs(deps)
+        ),
+    ],
     ['stellar', () => loadStellar(stellarAddresses, deps)],
   ]
   const settled = await Promise.allSettled(families.map(([, run]) => run()))
