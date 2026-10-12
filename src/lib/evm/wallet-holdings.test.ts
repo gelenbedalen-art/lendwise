@@ -5,9 +5,6 @@ import type { BalanceClient, ChainBalances } from './balance-reader'
 import type { CatalogToken } from './holdings-catalog'
 import { type HoldingsChain, getEvmWalletHoldings } from './wallet-holdings'
 
-// holdings-catalog.ts (holdingPriceKey) imports the database client at load.
-vi.mock('@/lib/db/postgres', () => ({ db: { execute: vi.fn() } }))
-
 const A = '0x00000000000000000000000000000000000000A1' as Address
 const USDC = '0x176211869ca2b568f2a7d4ee941e073a821ee1ff' as Address
 const WETH = '0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f' as Address
@@ -104,6 +101,32 @@ describe('getEvmWalletHoldings', () => {
         valueUsd: 2.5,
       },
     ])
+  })
+
+  it('skips an unknown balance instead of showing it as 0', async () => {
+    const d = deps(
+      byChain({
+        linea: { native: [0n], tokens: [[null, 5n * 10n ** 18n]] },
+        monad: { native: [0n], tokens: [[]] },
+      })
+    )
+    const r = await getEvmWalletHoldings([A], d)
+    expect(r.holdings).toEqual([
+      expect.objectContaining({ code: 'DUST', balance: 5 }),
+    ])
+  })
+
+  it('never logs an RPC key', async () => {
+    const d = deps(
+      byChain({
+        linea: lineaBalances,
+        monad: new Error('URL: https://monad-mainnet.infura.io/v3/secretkey'),
+      })
+    )
+    await getEvmWalletHoldings([A], d)
+    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain(
+      'secretkey'
+    )
   })
 
   it('reads each chain with its own catalogue tokens', async () => {

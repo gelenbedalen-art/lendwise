@@ -4,6 +4,7 @@ import { type Address, isAddress } from 'viem'
 import { db } from '@/lib/db/postgres'
 import { PRICE_MAX_AGE_HOURS } from '@/lib/risk/prices'
 
+import { holdingPriceKey } from './price-key'
 import { NATIVE_ERC20_ALIASES } from './wrapped-native'
 
 /** A token of the products catalogue, as read on one chain. */
@@ -29,10 +30,7 @@ export interface HoldingPriceRow {
   price_usd: number | string | null
 }
 
-/** `chainId:lowercase address` — the key of the holdings price map. */
-export function holdingPriceKey(chainId: number, address: string): string {
-  return `${chainId}:${address.toLowerCase()}`
-}
+export { holdingPriceKey }
 
 const aliases = NATIVE_ERC20_ALIASES as Record<number, string | undefined>
 

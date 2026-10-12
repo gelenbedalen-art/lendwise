@@ -8,7 +8,9 @@ import {
   type ChainBalances,
   readChainBalances,
 } from './balance-reader'
-import { type CatalogToken, holdingPriceKey } from './holdings-catalog'
+import type { CatalogToken } from './holdings-catalog'
+import { holdingPriceKey } from './price-key'
+import { redactRpcSecrets } from './redact'
 
 /** One tx chain, ready to read. */
 export interface HoldingsChain {
@@ -121,7 +123,10 @@ export async function getEvmWalletHoldings(
       ),
     ])
     .catch((reason: unknown) => {
-      console.error('[portfolio] evm wallet prices failed:', reason)
+      console.error(
+        '[portfolio] evm wallet prices failed:',
+        redactRpcSecrets(reason)
+      )
       return new Map<string, number>()
     })
 
@@ -147,7 +152,10 @@ export async function getEvmWalletHoldings(
     const { slug } = deps.chains[i]
     if (s.status === 'fulfilled') pending.push(...s.value)
     else {
-      console.error(`[portfolio] evm wallet ${slug} failed:`, s.reason)
+      console.error(
+        `[portfolio] evm wallet ${slug} failed:`,
+        redactRpcSecrets(s.reason)
+      )
       failedNetworks.push(slug)
     }
   })
