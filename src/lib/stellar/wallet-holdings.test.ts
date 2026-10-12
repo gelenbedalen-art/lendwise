@@ -35,6 +35,13 @@ const respond = (status: number, body: unknown) =>
   ) as unknown as typeof fetch
 
 describe('holdingsFromBalances', () => {
+  it('tags every holding as a Stellar holding', () => {
+    for (const h of holdingsFromBalances(G, balances)) {
+      expect(h.chainFamily).toBe('stellar')
+      expect(h.network).toBe('stellar')
+    }
+  })
+
   it('keeps XLM and every trustline, and skips pool shares', () => {
     expect(
       holdingsFromBalances(G, balances).map((h) => [h.code, h.balance])

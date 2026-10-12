@@ -9,8 +9,8 @@ import {
   type PortfolioPartialFailure,
   type PortfolioWalletInput,
   STELLAR_WALLET_SOURCE,
-  type StellarHolding,
   type UserPortfolioResult,
+  type WalletHolding,
   emptyUserPositions,
   mergeUserPositions,
 } from './types'
@@ -30,7 +30,7 @@ type Loaders<A extends string> = Record<
 export interface PortfolioDeps {
   evmAdapters: Loaders<Address>
   stellarAdapters: Loaders<string>
-  stellarHoldings(addresses: string[]): Promise<StellarHolding[]>
+  stellarHoldings(addresses: string[]): Promise<WalletHolding[]>
   computeRisk(accounts: RiskAccount[]): Promise<RiskAccountResult[]>
   /** Per-source time limit; defaults to `SOURCE_TIMEOUT_MS`. */
   sourceTimeoutMs?: number
@@ -57,7 +57,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 interface FamilyResult {
   positions: UserPosition
   riskAccounts: RiskAccount[]
-  holdings: StellarHolding[]
+  holdings: WalletHolding[]
   failures: PortfolioPartialFailure[]
 }
 
