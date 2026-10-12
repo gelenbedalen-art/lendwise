@@ -5,11 +5,13 @@ import type { RiskAccountResult } from '@/lib/risk/types'
 import type { BorrowPosition } from '@/types'
 
 import {
+  type WalletBalanceRow,
   attachRisk,
   failureLabel,
   orphanRiskRows,
   reportedHealthFactors,
   sortableHealth,
+  walletBalanceBreakdown,
   walletBalanceRows,
 } from './view'
 
@@ -166,5 +168,62 @@ describe('walletBalanceRows', () => {
       holding({ issuer: 'G2' }),
     ])
     expect(new Set(rows.map((r) => r.id)).size).toBe(2)
+  })
+})
+
+describe('walletBalanceBreakdown', () => {
+  const r = (
+    network: string,
+    valueUsd: number | null,
+    id = `${network}:${valueUsd}`
+  ): WalletBalanceRow => ({
+    id,
+    network,
+    userAddress: 'GOWNER',
+    assetCode: 'X',
+    issuer: null,
+    balance: 1,
+    valueUsd,
+  })
+
+  it('groups priced rows by network with shares summing to 100', () => {
+    const b = walletBalanceBreakdown([
+      r('stellar', 30, 'a'),
+      r('base', 60, 'b'),
+      r('stellar', 10, 'c'),
+    ])
+    expect(b.totalUsd).toBe(100)
+    expect(b.slices).toEqual([
+      { network: 'base', valueUsd: 60, share: 60 },
+      { network: 'stellar', valueUsd: 40, share: 40 },
+    ])
+    expect(b.slices.reduce((a, s) => a + s.share, 0)).toBeCloseTo(100)
+  })
+
+  it('excludes unpriced rows from shares but counts them', () => {
+    const b = walletBalanceBreakdown([
+      r('stellar', 50, 'a'),
+      r('base', null, 'b'),
+      r('stellar', null, 'c'),
+    ])
+    expect(b.priced).toBe(1)
+    expect(b.unpriced).toBe(2)
+    expect(b.totalUsd).toBe(50)
+    expect(b.slices).toEqual([{ network: 'stellar', valueUsd: 50, share: 100 }])
+  })
+
+  it('has a null total and no slices when nothing is priced', () => {
+    expect(
+      walletBalanceBreakdown([r('stellar', null, 'a'), r('base', null, 'b')])
+    ).toEqual({ totalUsd: null, priced: 0, unpriced: 2, slices: [] })
+  })
+
+  it('handles empty input', () => {
+    expect(walletBalanceBreakdown([])).toEqual({
+      totalUsd: null,
+      priced: 0,
+      unpriced: 0,
+      slices: [],
+    })
   })
 })
