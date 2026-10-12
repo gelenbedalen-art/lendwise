@@ -10,10 +10,10 @@ repository, on a staging environment, and on [lendwise.fi](https://lendwise.fi).
 | [1 — Standardized health-factor & risk module, portfolio UI](#1--standardized-health-factor--risk-module-portfolio-ui) ($5,650)    | Unit-test suite passing in CI over multiple reserve/oracle scenarios including an unpriced asset; on staging, a fixture Stellar adapter shows a computed health factor for a Stellar address, and "unknown" without a price | Delivered (staging)                                                    |
 | [2 — EVM + Stellar portfolio merge with graceful degradation](#2--evm--stellar-portfolio-merge-with-graceful-degradation) ($6,780) | EVM Aave position and Stellar USDC in the same portfolio view; with the Stellar endpoint unreachable, the page still renders the EVM side with the partial-data indicator                                                   | Delivered (staging) — lendwise.fi check pending the production release |
 
-**Staging:** [lendwise-web-git-mainnet-smarttdev.vercel.app](https://lendwise-web-git-mainnet-smarttdev.vercel.app)
-(Vercel preview of the `mainnet` branch). **CI:** the latest green run on `mainnet`,
-[run 38232534999](https://github.com/lendwise-fi/lendwise/actions/runs/38232534999), commit
-`cc517b0`.
+**Staging:** [lendwise-mainnet.vercel.app](https://lendwise-mainnet.vercel.app)
+(custom domain of the `mainnet` branch preview). **CI:** the latest green run on `mainnet`,
+[run 38286634254](https://github.com/lendwise-fi/lendwise/actions/runs/38286634254), commit
+`a4bb6c9`.
 
 **Network.** The demonstrations run on Stellar **mainnet**, not testnet. Blend v1 and v2 have been
 frozen or on ice since the exploit, and Blend v2.1 is live on mainnet; the staging fixture
@@ -33,21 +33,21 @@ Blend v2.1 Fixed pool oracle prices, read from the spot pipeline.
 
 ### What was built
 
-| Proposal item                                                                    | Where                                                                                                                                                                                                                                                                                                   |
-| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Standardized health-factor formula and its states** (including "unknown")      | [`src/lib/risk/health-factor.ts`](../src/lib/risk/health-factor.ts), types in [`src/lib/risk/types.ts`](../src/lib/risk/types.ts)                                                                                                                                                                       |
-| **Prices from the spot pipeline** — no second oracle round                       | [`src/lib/risk/prices.ts`](../src/lib/risk/prices.ts); computation in [`src/lib/risk/compute.ts`](../src/lib/risk/compute.ts); portfolio summary in [`src/lib/risk/summary.ts`](../src/lib/risk/summary.ts)                                                                                             |
-| **Adapter contract** — an adapter exposes positions and per-reserve risk weights | `getRiskAccounts` and `StellarPositionsAdapter` in [`src/lib/protocols/core/types.ts`](../src/lib/protocols/core/types.ts)                                                                                                                                                                              |
-| **Blend v2.1 adapter** and **Stellar fixture adapter**, registered the same way  | [`src/lib/protocols/blend/v2_1/positions.ts`](../src/lib/protocols/blend/v2_1/positions.ts); [`src/lib/protocols/stellar/fixture/index.ts`](../src/lib/protocols/stellar/fixture/index.ts); registry `stellarPositionAdapters` in [`src/config/protocols-server.ts`](../src/config/protocols-server.ts) |
-| **Morpho** risk accounts, with the collateral price from the spot pipeline       | [`src/lib/protocols/morpho/v1/risk.ts`](../src/lib/protocols/morpho/v1/risk.ts); [`src/lib/protocols/morpho/v1/apy-spot.ts`](../src/lib/protocols/morpho/v1/apy-spot.ts)                                                                                                                                |
-| **Portfolio UI** — health factor and its states                                  | [`HealthFactorValue.tsx`](../src/components/portfolio/HealthFactorValue.tsx), [`Portfolio.tsx`](../src/components/portfolio/Portfolio.tsx), [`PortfolioSidebar.tsx`](../src/components/portfolio/PortfolioSidebar.tsx), [`BorrowingTable.tsx`](../src/components/portfolio/BorrowingTable.tsx)          |
-| **Daily aggregation** of the new hourly rows, with no change                     | `aggregateDaily` in [`src/lib/db/repositories/apy.ts`](../src/lib/db/repositories/apy.ts#L242) groups `apy_hourly` by `product_id` with no protocol filter, so any protocol writing hourly rows is covered                                                                                              |
+| Proposal item                                                                                   | Where                                                                                                                                                                                                                                                                                                   |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Standardized health-factor formula and its states** (including "unknown")                     | [`src/lib/risk/health-factor.ts`](../src/lib/risk/health-factor.ts), types in [`src/lib/risk/types.ts`](../src/lib/risk/types.ts)                                                                                                                                                                       |
+| **Prices from the spot pipeline** — no second oracle round                                      | [`src/lib/risk/prices.ts`](../src/lib/risk/prices.ts); computation in [`src/lib/risk/compute.ts`](../src/lib/risk/compute.ts); portfolio summary in [`src/lib/risk/summary.ts`](../src/lib/risk/summary.ts)                                                                                             |
+| **Adapter contract** — an adapter exposes positions and per-reserve risk weights                | `getRiskAccounts` and `StellarPositionsAdapter` in [`src/lib/protocols/core/types.ts`](../src/lib/protocols/core/types.ts)                                                                                                                                                                              |
+| **Blend v2.1 adapter** and **Stellar fixture adapter**, registered the same way                 | [`src/lib/protocols/blend/v2_1/positions.ts`](../src/lib/protocols/blend/v2_1/positions.ts); [`src/lib/protocols/stellar/fixture/index.ts`](../src/lib/protocols/stellar/fixture/index.ts); registry `stellarPositionAdapters` in [`src/config/protocols-server.ts`](../src/config/protocols-server.ts) |
+| **Morpho** risk accounts, with the collateral price from the spot pipeline                      | [`src/lib/protocols/morpho/v1/risk.ts`](../src/lib/protocols/morpho/v1/risk.ts); [`src/lib/protocols/morpho/v1/apy-spot.ts`](../src/lib/protocols/morpho/v1/apy-spot.ts)                                                                                                                                |
+| **Portfolio UI** — health factor and its states (the Health column details are in a hover card) | [`HealthFactorValue.tsx`](../src/components/portfolio/HealthFactorValue.tsx), [`Portfolio.tsx`](../src/components/portfolio/Portfolio.tsx), [`PortfolioSidebar.tsx`](../src/components/portfolio/PortfolioSidebar.tsx), [`BorrowingTable.tsx`](../src/components/portfolio/BorrowingTable.tsx)          |
+| **Daily aggregation** of the new hourly rows, with no change                                    | `aggregateDaily` in [`src/lib/db/repositories/apy.ts`](../src/lib/db/repositories/apy.ts#L242) groups `apy_hourly` by `product_id` with no protocol filter, so any protocol writing hourly rows is covered                                                                                              |
 
 ### Tests (CI)
 
 The [CI workflow](../.github/workflows/ci.yml) runs format, lint, codegen, tests and typecheck;
 the latest green run on `mainnet` is
-[38232534999](https://github.com/lendwise-fi/lendwise/actions/runs/38232534999) (`cc517b0`).
+[38286634254](https://github.com/lendwise-fi/lendwise/actions/runs/38286634254) (`a4bb6c9`).
 
 | Test file                                                                                                                                                           | What it pins                                                                                                                                                                                                                                                                                                      |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -74,17 +74,20 @@ The expected health factor follows from the formula and the live oracle prices:
 HF = 10000 × p_XLM × 0.75 / (1000 × p_USDC ÷ 0.95)
 ```
 
-**Health factor computed from the fixture** — the value on the page matches the formula above for
-the prices shown.
+**Health factor computed from the fixture** — the Borrowing tab shows the "Stellar fixture" row with
+a health factor of 1.40 at capture time, and the sidebar shows it as the lowest health factor. The
+value matches the formula above for the prices at that moment.
 
-![Portfolio page for the fixture address, showing the computed health factor](scf-45/t2-hf-fixture.png)
+![Borrowing tab for the fixture address: Stellar fixture row with health factor 1.40, sidebar Lowest health factor](scf-45/t2-hf-fixture.png)
 
-**"Unknown" state** — the XLM price removed from the oracle map.
+**"Unknown" state** — the XLM price removed from the price map. The Health column shows
+"Unknown"; its hover card reads "No current price for XLM — Not computed rather than guessed."; the
+sidebar shows "Unknown (1 account)".
 
-![Portfolio page for the fixture address with the XLM price removed: the health factor is Unknown](scf-45/t2-hf-unknown.png)
+![Borrowing tab for the fixture address with the XLM price removed: health factor Unknown, hover card and sidebar](scf-45/t2-hf-unknown.png)
 
-_With the XLM price removed, the fixture's XLM collateral is also valued at $0 in the supply table
-and the net position. This is expected: the point of the capture is the Unknown health factor._
+_With the XLM price removed, the fixture's XLM collateral is also valued at $0 in totals and the net
+position. This is expected: the point of the capture is the Unknown health factor._
 
 ---
 
@@ -102,21 +105,39 @@ and the net position. This is expected: the point of the capture is the Unknown 
 | Proposal item                                                                       | Where                                                                                                                                                                                                                                                                                                                                                                                      |
 | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Merge of EVM and Stellar sources**, each failing independently                    | [`src/lib/portfolio/load.ts`](../src/lib/portfolio/load.ts) — a two-level `Promise.allSettled`, a per-source time limit, and generic client messages (no internal error text reaches the browser); routing in [`src/lib/portfolio/routing.ts`](../src/lib/portfolio/routing.ts); server action [`src/app/actions/user-portfolio.actions.ts`](../src/app/actions/user-portfolio.actions.ts) |
-| **Stellar wallet holdings** (USDC and other balances, outside any lending protocol) | [`src/lib/stellar/wallet-holdings.ts`](../src/lib/stellar/wallet-holdings.ts), shown by [`StellarHoldings.tsx`](../src/components/portfolio/StellarHoldings.tsx)                                                                                                                                                                                                                           |
+| **Stellar wallet holdings** (USDC and other balances, outside any lending protocol) | [`src/lib/stellar/wallet-holdings.ts`](../src/lib/stellar/wallet-holdings.ts), shown in a "Wallet balances" tab ([`WalletBalancesTable.tsx`](../src/components/portfolio/WalletBalancesTable.tsx)) and in a sidebar block broken down by network ([`PortfolioSidebar.tsx`](../src/components/portfolio/PortfolioSidebar.tsx))                                                              |
 | **Partial-data indicator**                                                          | [`PartialDataBanner.tsx`](../src/components/portfolio/PartialDataBanner.tsx), rendered by [`Portfolio.tsx`](../src/components/portfolio/Portfolio.tsx)                                                                                                                                                                                                                                     |
 
 ### Staging demonstration
 
-**Merged view** — EVM and Stellar in the same portfolio page.
+Wallets used on [lendwise-mainnet.vercel.app](https://lendwise-mainnet.vercel.app): EVM
+`0xb09303f65801e1d995f7f3838ae60a3d3b0a3f28` (Aave v3 positions on Linea) and Stellar
+`GDHYIHAZ5URVB5TUKLREMPFGH4AYMIMON5KHXKKNYLTYGLUECF4OKV33` (Circle USDC trustline and XLM; also the
+fixture address).
 
-![Staging portfolio page showing the EVM and Stellar sides together](scf-45/t2-staging-merged.png)
+**Merged view** — the Wallet balances tab shows the Stellar wallet's USDC and XLM, and the sidebar
+breakdowns show the Aave v3 Linea positions: the EVM Aave position and the Stellar USDC in the same
+view.
 
-**Degradation** — the Stellar endpoint made unreachable: the page still renders the EVM side, with
-the partial-data banner.
+![Staging portfolio page, Wallet balances tab: Stellar USDC and XLM, with the Aave v3 Linea positions in the sidebar](scf-45/t2-staging-merged.png)
 
-![Staging portfolio page with the Stellar endpoint unreachable: EVM side rendered, partial-data banner shown](scf-45/t2-degradation.png)
+**Degradation** — Stellar RPC and Horizon pointed at an unreachable host. The page shows the banner
+"Partial data: Stellar · Blend v2.1, Stellar wallet temporarily unavailable. Everything else below
+is up to date." and the EVM positions are still rendered.
 
-[Recording of the degradation path](scf-45/t2-degradation.mp4).
+![Staging portfolio page with Stellar RPC and Horizon unreachable: partial-data banner, EVM positions rendered](scf-45/t2-degradation.png)
+
+Same state, Wallet balances tab: empty.
+
+![Staging Wallet balances tab with Stellar unreachable: empty](scf-45/t2-degradation-wallet.png)
+
+### Staging levers
+
+Preview-only environment variables; the fixture and price levers are ignored in production.
+
+- `STELLAR_RISK_FIXTURE_ADDRESS` — the address served by the fixture adapter.
+- `RISK_DROP_PRICE_KEYS` — price keys removed from the price map (the "Unknown" demonstration).
+- `STELLAR_RPC` / `STELLAR_HORIZON_URL` — overrides, pointed at an unreachable host for the degradation demonstration.
 
 ### Reviewer walkthrough on lendwise.fi
 
