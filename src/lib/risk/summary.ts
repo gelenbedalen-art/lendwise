@@ -9,14 +9,16 @@ export type HealthSummary =
 /**
  * The portfolio-level figure: the LOWEST health factor across isolated
  * accounts — never a sum of them. `reported` carries protocol-reported values
- * (Aave, Compound) for rows the module does not compute.
+ * (Aave, Compound) for rows the module does not compute; `extraUnknown`
+ * counts risk rows whose result is missing, which are Unknown too.
  */
 export function summarizeHealth(
   results: RiskAccountResult[],
-  reported: number[] = []
+  reported: number[] = [],
+  extraUnknown = 0
 ): HealthSummary {
   const fromReported = reported.filter((v) => Number.isFinite(v) && v > 0)
-  if (results.length === 0 && fromReported.length === 0)
+  if (results.length === 0 && fromReported.length === 0 && extraUnknown <= 0)
     return { status: 'none' }
 
   const numeric = [
@@ -26,9 +28,9 @@ export function summarizeHealth(
     ...fromReported,
   ]
   const lowest = numeric.length > 0 ? Math.min(...numeric) : null
-  const unknownCount = results.filter(
-    (r) => r.result.status === 'unknown'
-  ).length
+  const unknownCount =
+    results.filter((r) => r.result.status === 'unknown').length +
+    Math.max(0, extraUnknown)
 
   if (unknownCount > 0) return { status: 'unknown', unknownCount, lowest }
   if (lowest == null) return { status: 'no-liability' }

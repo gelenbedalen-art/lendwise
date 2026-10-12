@@ -11,7 +11,11 @@ import { protocolVersionName } from '@/config/protocols-meta'
 import { useCurrency } from '@/contexts'
 import { useLoadUserPortfolio } from '@/hooks/useLoadUserPortfolio'
 import type { PortfolioWalletInput } from '@/lib/portfolio/types'
-import { attachRisk, reportedHealthFactors } from '@/lib/portfolio/view'
+import {
+  attachRisk,
+  orphanRiskRows,
+  reportedHealthFactors,
+} from '@/lib/portfolio/view'
 import { summarizeHealth } from '@/lib/risk/summary'
 import { useWalletStore } from '@/stores/walletStore'
 
@@ -155,7 +159,8 @@ export function Portfolio() {
   )
   const health = summarizeHealth(
     portfolio.riskAccounts,
-    reportedHealthFactors(borrowData)
+    reportedHealthFactors(borrowData),
+    orphanRiskRows(borrowData, portfolio.riskAccounts)
   )
 
   const netPosition =

@@ -28,6 +28,19 @@ export function attachRisk(
   })
 }
 
+/** Distinct risk accounts that rows point at but no result backs. */
+export function orphanRiskRows(
+  rows: BorrowRow[],
+  results: RiskAccountResult[]
+): number {
+  const known = new Set(results.map((r) => r.id))
+  return new Set(
+    rows.flatMap((r) =>
+      r.riskAccountId && !known.has(r.riskAccountId) ? [r.riskAccountId] : []
+    )
+  ).size
+}
+
 /** Health factors protocols report on rows the module does not compute (Aave, Compound). */
 export function reportedHealthFactors(rows: BorrowRow[]): number[] {
   return rows.filter((r) => !r.riskAccountId).map((r) => Number(r.healthFactor))

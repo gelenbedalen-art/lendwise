@@ -37,5 +37,6 @@ export function collateralPriceInLoanAsset(
   if (price == null || collateralDecimals == null) return null
   const raw = Number(price)
   if (!Number.isFinite(raw) || raw <= 0) return null
-  return raw / 10 ** (36 + loanDecimals - collateralDecimals)
+  const result = raw / 10 ** (36 + loanDecimals - collateralDecimals)
+  return Number.isFinite(result) ? result : null
 }

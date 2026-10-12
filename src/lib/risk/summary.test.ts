@@ -50,4 +50,29 @@ describe('summarizeHealth', () => {
       status: 'no-liability',
     })
   })
+
+  it('counts orphan rows as unknown', () => {
+    expect(
+      summarizeHealth(
+        [
+          r('a', {
+            status: 'ok',
+            healthFactor: 2.4,
+            weightedCollateralUsd: 1,
+            weightedLiabilityUsd: 1,
+          }),
+        ],
+        [],
+        2
+      )
+    ).toEqual({ status: 'unknown', unknownCount: 2, lowest: 2.4 })
+  })
+
+  it('is unknown, not none, when orphans are all there is', () => {
+    expect(summarizeHealth([], [], 1)).toEqual({
+      status: 'unknown',
+      unknownCount: 1,
+      lowest: null,
+    })
+  })
 })

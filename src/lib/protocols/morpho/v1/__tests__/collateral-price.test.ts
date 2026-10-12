@@ -21,4 +21,9 @@ describe('collateralPriceInLoanAsset', () => {
     expect(collateralPriceInLoanAsset('0', 6, 8)).toBeNull()
     expect(collateralPriceInLoanAsset('1', 6, null)).toBeNull()
   })
+
+  it('returns null when the scaled result is not finite', () => {
+    // 10^(36 + 6 − 500) underflows to 0, so the division overflows
+    expect(collateralPriceInLoanAsset('1e30', 6, 500)).toBeNull()
+  })
 })

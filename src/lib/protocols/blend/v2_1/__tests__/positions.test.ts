@@ -17,6 +17,7 @@ const api = vi.hoisted(() => ({
   getPool: vi.fn(),
   getPoolUser: vi.fn(),
   getTokenMetadata: vi.fn(),
+  primeTokenMetadata: vi.fn(),
 }))
 vi.mock('../../common/api', () => api)
 vi.mock('@/lib/db/repositories/products', () => ({

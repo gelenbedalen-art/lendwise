@@ -81,9 +81,22 @@ export function calculateHealthFactor(
     }
   }
 
+  const healthFactor = weightedCollateralUsd / weightedLiabilityUsd
+  if (
+    !Number.isFinite(weightedCollateralUsd) ||
+    !Number.isFinite(weightedLiabilityUsd) ||
+    !Number.isFinite(healthFactor)
+  ) {
+    return {
+      status: 'unknown',
+      reason: 'invalid-amount',
+      symbols: unique(exposed.map((r) => r.symbol)),
+    }
+  }
+
   return {
     status: 'ok',
-    healthFactor: weightedCollateralUsd / weightedLiabilityUsd,
+    healthFactor,
     weightedCollateralUsd,
     weightedLiabilityUsd,
   }

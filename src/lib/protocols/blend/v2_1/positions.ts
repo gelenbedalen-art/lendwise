@@ -14,7 +14,12 @@ import {
 } from '@/lib/risk/types'
 import type { BorrowPosition, SupplyPosition } from '@/types'
 
-import { getPool, getPoolUser, getTokenMetadata } from '../common/api'
+import {
+  getPool,
+  getPoolUser,
+  getTokenMetadata,
+  primeTokenMetadata,
+} from '../common/api'
 import { BLEND_PROVIDER } from '../common/config'
 import { BLEND_DEPLOYMENTS } from '../common/deployments'
 import type { TokenMetadata } from '../common/types'
@@ -222,6 +227,8 @@ async function loadReadings(addresses: string[]): Promise<BlendPoolReading[]> {
     const pool = (await getPool({ version: deployment.sdk, poolId })) as PoolV2
     if (pool.metadata.status === 6) continue // setup, never launched
     const reserves = [...pool.reserves.values()]
+    // One batched read; the per-reserve calls below then hit the cache.
+    await primeTokenMetadata(reserves.map((r) => r.assetId))
     const tokens = new Map<string, TokenMetadata>()
     for (const reserve of reserves) {
       tokens.set(reserve.assetId, await getTokenMetadata(reserve.assetId))

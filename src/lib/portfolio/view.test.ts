@@ -6,6 +6,7 @@ import type { BorrowPosition } from '@/types'
 import {
   attachRisk,
   failureLabel,
+  orphanRiskRows,
   reportedHealthFactors,
   sortableHealth,
 } from './view'
@@ -90,5 +91,17 @@ describe('portfolio view helpers', () => {
     expect(
       failureLabel({ chainFamily: 'evm', source: 'evm', message: '' })
     ).toBe('EVM')
+  })
+
+  it('counts distinct risk accounts that have no result', () => {
+    const rows = [
+      row({ riskAccountId: 'a' }),
+      row({ riskAccountId: 'a' }),
+      row({ riskAccountId: 'b' }),
+      row({ riskAccountId: 'c' }),
+      row({}),
+    ]
+    expect(orphanRiskRows(rows, [ok('c', 2)])).toBe(2)
+    expect(orphanRiskRows(rows, [ok('a', 2), ok('b', 2), ok('c', 2)])).toBe(0)
   })
 })

@@ -164,4 +164,27 @@ describe('calculateHealthFactor', () => {
       symbols: ['ETH'],
     })
   })
+
+  it('is unknown when the weighted sums overflow', () => {
+    const result = calculateHealthFactor(
+      [
+        reserve({
+          symbol: 'ETH',
+          collateral: Number.MAX_VALUE,
+          collateralWeight: 0.8,
+        }),
+        reserve({
+          symbol: 'USDC',
+          liability: Number.MAX_VALUE,
+          liabilityWeight: 0.5,
+        }),
+      ],
+      prices({ ETH: 10, USDC: 10 })
+    )
+    expect(result).toEqual({
+      status: 'unknown',
+      reason: 'invalid-amount',
+      symbols: ['ETH', 'USDC'],
+    })
+  })
 })
