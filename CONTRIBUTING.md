@@ -34,7 +34,7 @@ Not every env var is required for local work:
 | `DATABASE_URL`                                         | Anything that reads/writes APY history (Neon Postgres)                                                               |
 | `THEGRAPH_API_KEY`                                     | `pnpm codegen` and the Compound V3 adapter ([free key](https://thegraph.com/studio/apikeys/))                        |
 | `NEXT_PUBLIC_RPC_PROVIDER` + `NEXT_PUBLIC_RPC_API_KEY` | Browser RPC config; `pnpm dev` and `pnpm build` need both                                                            |
-| `RPC_API_KEY` / `RPC_API_KEY_SECRET`                   | Server RPC config: server wallet reads and Blend need it. For keyless local Blend reads, set `RPC_URL_STELLAR` alone |
+| `RPC_API_KEY` (+ `RPC_API_KEY_SECRET` for Infura)      | Server RPC config: server wallet reads and Blend need it. For keyless local Blend reads, set `RPC_URL_STELLAR` alone |
 | Everything else                                        | Optional locally — rate limiting and analytics no-op when unset                                                      |
 
 Most adapter work only touches GraphQL APIs and subgraphs — you can build and test those
