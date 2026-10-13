@@ -13,12 +13,13 @@ import { useLoadUserPortfolio } from '@/hooks/useLoadUserPortfolio'
 import type { PortfolioWalletInput } from '@/lib/portfolio/types'
 import {
   attachRisk,
+  networkName,
   orphanRiskRows,
   reportedHealthFactors,
+  topWalletSlices,
   walletBalanceBreakdown,
   walletBalanceRows,
 } from '@/lib/portfolio/view'
-import { CHAIN_BY_SLUG } from '@/lib/protocols/core/toolkit'
 import { summarizeHealth } from '@/lib/risk/summary'
 import { useWalletStore } from '@/stores/walletStore'
 
@@ -27,14 +28,6 @@ import { HealthSummaryValue } from './HealthFactorValue'
 import { PartialDataBanner } from './PartialDataBanner'
 import PortfolioSidebar from './PortfolioSidebar'
 import { PortfolioSkeleton } from './PortfolioSkeleton'
-
-/** Chain registry display name for a slug, else the capitalized slug. */
-function networkName(slug: string): string {
-  return (
-    (CHAIN_BY_SLUG as Record<string, { name: string } | undefined>)[slug]
-      ?.name ?? slug.charAt(0).toUpperCase() + slug.slice(1)
-  )
-}
 
 export function Portfolio() {
   const { address: evmAddress, isConnected: isEvmConnected } = useAccount()
@@ -182,7 +175,7 @@ export function Portfolio() {
         : walletBreakdown.totalUsd * rate,
     count: walletData.length,
     unpriced: walletBreakdown.unpriced,
-    breakdown: walletBreakdown.slices.map((slice, idx) => ({
+    breakdown: topWalletSlices(walletBreakdown.slices).map((slice, idx) => ({
       name: networkName(slice.network),
       value: slice.share,
       color: PROTOCOL_COLORS[idx % PROTOCOL_COLORS.length],

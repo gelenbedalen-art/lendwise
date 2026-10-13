@@ -19,6 +19,7 @@ import { NetworkFamilySelectorDialog } from '@/components/wallet/NetworkFamilySe
 import { useStellarWallet } from '@/contexts/StellarWalletContext'
 import { useMultiWalletManager } from '@/hooks/useMultiWalletManager'
 import { formatAddress } from '@/lib/utils'
+import { walletSubtitle } from '@/lib/wallet/wallet-label'
 import { type Wallet, useWalletStore } from '@/stores/walletStore'
 
 import { WalletAvatar } from '../wallet/WalletAvatar'
@@ -90,13 +91,7 @@ const WalletRow = ({ wallet }: { wallet: Wallet }) => {
         <div className="flex flex-col">
           <span className="text-sm font-medium">{displayName}</span>
           <span className="text-muted-foreground text-xs">
-            {isStellar
-              ? isSignedOutStellar
-                ? 'Stellar · Not signed in'
-                : 'Stellar'
-              : !hasClient
-                ? 'No client'
-                : null}
+            {walletSubtitle(wallet, hasClient)}
           </span>
         </div>
       </div>

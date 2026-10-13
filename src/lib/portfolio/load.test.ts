@@ -4,6 +4,7 @@ import type { RiskAccount } from '@/lib/risk/types'
 import type { BorrowPosition, SupplyPosition } from '@/types'
 
 import { type PortfolioDeps, type PositionsSource, loadPortfolio } from './load'
+import type { WalletHolding } from './types'
 
 const G = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN'
 const EVM = '0x52908400098527886E0F7030069857D2E4169EE7'
@@ -45,6 +46,7 @@ function deps(overrides: Partial<PortfolioDeps> = {}): PortfolioDeps {
     evmAdapters: { aave_v3: async () => source([supply('aave')]) },
     stellarAdapters: { 'blend_v2.1': async () => source([supply('blend')]) },
     stellarHoldings: async () => [],
+    evmHoldings: async () => ({ holdings: [], failedNetworks: [] }),
     computeRisk: async (accounts) =>
       accounts.map((a) => ({
         id: a.id,
@@ -63,6 +65,182 @@ describe('loadPortfolio', () => {
   })
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  const held = (network: string, code: string): WalletHolding => ({
+    chainFamily: network === 'stellar' ? 'stellar' : 'evm',
+    network,
+    owner: network === 'stellar' ? G : EVM,
+    assetType: 'native',
+    code,
+    issuer: null,
+    balance: 1,
+    priceUsd: null,
+    valueUsd: null,
+  })
+
+  it('merges EVM and Stellar wallet holdings', async () => {
+    const result = await loadPortfolio(
+      wallets,
+      deps({
+        evmHoldings: async () => ({
+          holdings: [held('linea', 'ETH')],
+          failedNetworks: [],
+        }),
+        stellarHoldings: async () => [held('stellar', 'XLM')],
+      })
+    )
+    expect(result.holdings.map((h) => h.code)).toEqual(['ETH', 'XLM'])
+    expect(result.failures).toEqual([])
+  })
+
+  it('keeps EVM positions when the EVM wallet read fails', async () => {
+    const result = await loadPortfolio(
+      wallets,
+      deps({
+        evmHoldings: async () => {
+          throw new Error('catalogue down')
+        },
+      })
+    )
+    expect(result.positions.supply.aave_v3).toEqual([supply('aave')])
+    expect(result.failures).toEqual([
+      {
+        chainFamily: 'evm',
+        source: 'evm_wallet',
+        message: 'Temporarily unavailable',
+      },
+    ])
+  })
+
+  it('reports each EVM chain that could not be read', async () => {
+    const result = await loadPortfolio(
+      wallets,
+      deps({
+        evmHoldings: async () => ({
+          holdings: [held('base', 'ETH')],
+          failedNetworks: ['linea', 'monad'],
+        }),
+      })
+    )
+    expect(result.holdings.map((h) => h.network)).toEqual(['base'])
+    expect(result.failures).toEqual([
+      {
+        chainFamily: 'evm',
+        source: 'evm_wallet:linea',
+        message: 'Temporarily unavailable',
+      },
+      {
+        chainFamily: 'evm',
+        source: 'evm_wallet:monad',
+        message: 'Temporarily unavailable',
+      },
+    ])
+  })
+
+  it('times out a slow EVM wallet read without losing the positions', async () => {
+    const result = await loadPortfolio(
+      wallets,
+      deps({
+        sourceTimeoutMs: 20,
+        evmHoldings: () => new Promise(() => {}),
+      })
+    )
+    expect(result.positions.supply.aave_v3).toEqual([supply('aave')])
+    expect(result.failures).toEqual([
+      {
+        chainFamily: 'evm',
+        source: 'evm_wallet',
+        message: 'Temporarily unavailable',
+      },
+    ])
+  })
+
+  it('does not read EVM wallets without an EVM address', async () => {
+    const evmHoldings = vi.fn(async () => ({
+      holdings: [],
+      failedNetworks: [],
+    }))
+    await loadPortfolio(
+      [{ address: G, chainFamily: 'stellar' }],
+      deps({ evmHoldings })
+    )
+    expect(evmHoldings).not.toHaveBeenCalled()
+  })
+
+  it('hands the routed EVM addresses to the EVM wallet read', async () => {
+    const evmHoldings = vi.fn(async () => ({
+      holdings: [],
+      failedNetworks: [],
+    }))
+    await loadPortfolio(wallets, deps({ evmHoldings }))
+    expect(evmHoldings).toHaveBeenCalledWith([EVM])
+  })
+
+  it('keeps EVM positions when the EVM wallet read throws synchronously', async () => {
+    const result = await loadPortfolio(
+      wallets,
+      deps({
+        evmHoldings: () => {
+          throw new Error('sync boom')
+        },
+      })
+    )
+    expect(result.positions.supply.aave_v3).toEqual([supply('aave')])
+    expect(result.failures).toEqual([
+      {
+        chainFamily: 'evm',
+        source: 'evm_wallet',
+        message: 'Temporarily unavailable',
+      },
+    ])
+  })
+
+  it('keeps Stellar positions when the Stellar wallet read throws synchronously', async () => {
+    const result = await loadPortfolio(
+      wallets,
+      deps({
+        stellarHoldings: () => {
+          throw new Error('sync boom')
+        },
+      })
+    )
+    expect(result.positions.supply['blend_v2.1']).toEqual([supply('blend')])
+    expect(result.failures).toEqual([
+      {
+        chainFamily: 'stellar',
+        source: 'stellar_wallet',
+        message: 'Temporarily unavailable',
+      },
+    ])
+  })
+
+  it('reports both the EVM adapter and the EVM wallet read when both reject', async () => {
+    const stellarHolding = { assetCode: 'XLM' } as unknown as WalletHolding
+    const result = await loadPortfolio(
+      wallets,
+      deps({
+        evmAdapters: { aave_v3: async () => failing('rpc down') },
+        evmHoldings: async () => {
+          throw new Error('catalogue down')
+        },
+        stellarHoldings: async () => [stellarHolding],
+      })
+    )
+    expect(result.failures).toEqual([
+      {
+        chainFamily: 'evm',
+        source: 'aave_v3',
+        message: 'Temporarily unavailable',
+      },
+      {
+        chainFamily: 'evm',
+        source: 'evm_wallet',
+        message: 'Temporarily unavailable',
+      },
+    ])
+    expect(result.positions.supply['blend_v2.1']).toEqual([supply('blend')])
+    expect(result.holdings).toEqual([stellarHolding])
   })
 
   it('keeps the EVM side and reports the Stellar adapter that failed', async () => {

@@ -45,12 +45,17 @@ const INFURA_API_KEY = process.env.NEXT_PUBLIC_INFURA_API_KEY
 const infura = (subdomain: string) =>
   `https://${subdomain}.infura.io/v3/${INFURA_API_KEY}`
 
+const MULTICALL3 = '0xcA11bde05977b3631167028862bE2a173976CA11'
+
 // Not in our viem version yet — minimal definitions, explorers can come later.
+// multicall3 (canonical address) was checked on-chain on 2026-10-13, so
+// `blockCreated` is left out.
 const hyperevm = defineChain({
   id: 999,
   name: 'HyperEVM',
   nativeCurrency: { name: 'Hyperliquid', symbol: 'HYPE', decimals: 18 },
   rpcUrls: { default: { http: [infura('hyperevm-mainnet')] } },
+  contracts: { multicall3: { address: MULTICALL3 } },
 })
 
 const megaeth = defineChain({
@@ -58,6 +63,7 @@ const megaeth = defineChain({
   name: 'MegaETH',
   nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
   rpcUrls: { default: { http: [infura('megaeth-mainnet')] } },
+  contracts: { multicall3: { address: MULTICALL3 } },
 })
 
 const monad = defineChain({
@@ -65,6 +71,7 @@ const monad = defineChain({
   name: 'Monad',
   nativeCurrency: { name: 'Monad', symbol: 'MON', decimals: 18 },
   rpcUrls: { default: { http: [infura('monad-mainnet')] } },
+  contracts: { multicall3: { address: MULTICALL3 } },
 })
 
 export const TX_CHAINS = [
