@@ -1,3 +1,4 @@
+import { inspect } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RiskAccount } from '@/lib/risk/types'
@@ -65,6 +66,7 @@ describe('loadPortfolio', () => {
   })
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllEnvs()
   })
 
   const held = (network: string, code: string): WalletHolding => ({
@@ -444,5 +446,40 @@ describe('loadPortfolio', () => {
         },
       ])
     })
+  })
+
+  it('keeps RPC secrets out of the logs', async () => {
+    vi.stubEnv('RPC_API_KEY', 'serverkey123')
+    vi.stubEnv('RPC_API_KEY_SECRET', 'serversecret')
+    const basic = Buffer.from(':serversecret').toString('base64')
+    const httpError = Object.assign(new Error('Request failed'), {
+      config: {
+        url: 'https://stellar-mainnet.infura.io/v3/serverkey123',
+        headers: { authorization: `Basic ${basic}` },
+      },
+    })
+    await loadPortfolio(
+      wallets,
+      deps({
+        stellarAdapters: {
+          'blend_v2.1': async () => {
+            throw httpError
+          },
+        },
+        computeRisk: async () => {
+          throw httpError
+        },
+        evmAdapters: { aave_v3: async () => source([], [account('a')]) },
+      })
+    )
+    const logged = vi
+      .mocked(console.error)
+      .mock.calls.flat()
+      .map((a) => inspect(a, { depth: 5 }))
+      .join('\n')
+    expect(logged).toContain('[portfolio]')
+    expect(logged).not.toContain('serverkey123')
+    expect(logged).not.toContain('serversecret')
+    expect(logged).not.toContain(basic)
   })
 })

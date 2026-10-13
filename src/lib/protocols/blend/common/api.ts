@@ -15,15 +15,38 @@ import {
 } from '@blend-capital/blend-sdk'
 import { Address, Networks, rpc as stellarRpc } from '@stellar/stellar-sdk'
 
+import { type ServerRpc, serverRpc } from '@/config/rpc.server'
+import { redactRpcSecrets } from '@/lib/evm/redact'
+
 import type { BlendDeployment } from './deployments'
 import type { TokenMetadata } from './types'
 
-const RPC = process.env.STELLAR_RPC ?? 'https://mainnet.sorobanrpc.com'
+/** Public Soroban RPC, used when the RPC provider does not serve Stellar. */
+export const PUBLIC_SOROBAN_RPC = 'https://mainnet.sorobanrpc.com'
 
-const network: Network = {
-  rpc: RPC,
-  passphrase: Networks.PUBLIC,
-  opts: { allowHttp: true },
+/** Blend's network from a server RPC: its URL and auth header, or the public endpoint. */
+export function blendNetworkFrom(rpc: ServerRpc | null): Network {
+  return {
+    rpc: rpc?.url ?? PUBLIC_SOROBAN_RPC,
+    passphrase: Networks.PUBLIC,
+    opts: { allowHttp: true, headers: rpc?.headers ?? {} },
+  }
+}
+
+let network: Network | undefined
+
+/** Built on first use, not at import: the server RPC config is read at call time. */
+export function blendNetwork(): Network {
+  network ??= blendNetworkFrom(serverRpc('stellar'))
+  return network
+}
+
+/**
+ * The network, or the same network on an explicit `rpc`. The explicit
+ * endpoint is not the provider's, so it gets none of the provider's headers.
+ */
+export function withRpc(net: Network, rpc?: string): Network {
+  return rpc ? { ...net, rpc, opts: { allowHttp: true } } : net
 }
 
 /**
@@ -88,6 +111,24 @@ export function isRpcRefusal(err: unknown): boolean {
   )
 }
 
+/**
+ * The same failure without the request it came from: an SDK HTTP error
+ * carries the RPC URL (server key) and the Authorization header (secret).
+ * Keeps the message (redacted) and `response.status`, which `isRpcRefusal`
+ * reads.
+ */
+export function sanitizeRpcError(err: unknown): Error {
+  const status = (err as { response?: { status?: number } } | null)?.response
+    ?.status
+  const clean = Object.assign(
+    new Error(redactRpcSecrets(err)),
+    status === undefined ? {} : { response: { status } }
+  )
+  const name = (err as { name?: unknown } | null)?.name
+  if (typeof name === 'string') clean.name = name
+  return clean
+}
+
 let rpcQueue: Promise<unknown> = Promise.resolve()
 let lastCallAt = 0
 
@@ -108,7 +149,11 @@ function pacedRpc<T>(fn: () => Promise<T>): Promise<T> {
     const wait = lastCallAt + RPC_MIN_INTERVAL_MS - Date.now()
     if (wait > 0) await sleep(wait)
     lastCallAt = Date.now()
-    return fn()
+    try {
+      return await fn()
+    } catch (err) {
+      throw sanitizeRpcError(err)
+    }
   }
   // Chained on both settle paths so one rejection cannot stall the queue.
   const result = rpcQueue.then(run, run)
@@ -136,7 +181,7 @@ export async function getBackstop({
     )
   }
   return await pacedRpc(() =>
-    Backstop.load({ ...network, rpc: rpc ?? network.rpc }, deployment.backstop)
+    Backstop.load(withRpc(blendNetwork(), rpc), deployment.backstop)
   )
 }
 
@@ -153,9 +198,9 @@ export async function getPool({
   poolId: string
 }): Promise<PoolV1 | PoolV2> {
   if (version === Version.V2) {
-    return await pacedRpc(() => PoolV2.load(network, poolId))
+    return await pacedRpc(() => PoolV2.load(blendNetwork(), poolId))
   }
-  return await pacedRpc(() => PoolV1.load(network, poolId))
+  return await pacedRpc(() => PoolV1.load(blendNetwork(), poolId))
 }
 
 /** A user's positions in one pool, paced like every other read of this module. */
@@ -168,7 +213,9 @@ export async function getPoolUser({
   pool: Pool
   userId: string
 }): Promise<PoolUser> {
-  return await pacedRpc(() => PoolUser.load(network, poolId, pool, userId))
+  return await pacedRpc(() =>
+    PoolUser.load(blendNetwork(), poolId, pool, userId)
+  )
 }
 
 /**
@@ -196,7 +243,8 @@ export async function getPoolUser({
 export async function getFactoryDeployedPools(
   factoryId: string
 ): Promise<string[]> {
-  const server = new stellarRpc.Server(network.rpc, network.opts)
+  const net = blendNetwork()
+  const server = new stellarRpc.Server(net.rpc, net.opts)
 
   // Oldest ledger the RPC still serves events for; +1 keeps us strictly inside
   // the range `getEvents` accepts.
@@ -308,7 +356,8 @@ export async function primeTokenMetadata(
   const missing = assetIds.filter((id) => !tokenMetadataCache.has(id))
   if (missing.length === 0) return
 
-  const server = new stellarRpc.Server(rpc ?? network.rpc, network.opts)
+  const net = withRpc(blendNetwork(), rpc)
+  const server = new stellarRpc.Server(net.rpc, net.opts)
   const keys = missing.map((id) => BlendTokenMetadata.ledgerKey(id))
   const { entries } = await pacedRpc(() => server.getLedgerEntries(...keys))
 
@@ -358,7 +407,7 @@ export async function getTokenMetadata(
   if (cached) return cached
 
   const meta = await pacedRpc(() =>
-    BlendTokenMetadata.load({ ...network, rpc: rpc ?? network.rpc }, assetId)
+    BlendTokenMetadata.load(withRpc(blendNetwork(), rpc), assetId)
   )
   const token: TokenMetadata = {
     address: assetId,
@@ -401,7 +450,7 @@ export async function getPoolPrices({
   assetIds: string[]
   rpc?: string
 }): Promise<Map<string, number>> {
-  const net = { ...network, rpc: rpc ?? network.rpc }
+  const net = withRpc(blendNetwork(), rpc)
 
   const { decimals } = await pacedRpc(() => getOracleDecimals(net, oracleId))
 

@@ -137,7 +137,7 @@ Preview-only environment variables; the fixture and price levers are ignored in 
 
 - `STELLAR_RISK_FIXTURE_ADDRESS` — the address served by the fixture adapter.
 - `RISK_DROP_PRICE_KEYS` — price keys removed from the price map (the "Unknown" demonstration).
-- `STELLAR_RPC` / `STELLAR_HORIZON_URL` — overrides, pointed at an unreachable host for the degradation demonstration.
+- `STELLAR_RPC` / `STELLAR_HORIZON_URL` — overrides, pointed at an unreachable host for the degradation demonstration (since spec 0004 the same lever is `RPC_URL_STELLAR`).
 
 ### Reviewer walkthrough on lendwise.fi
 

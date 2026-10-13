@@ -29,15 +29,22 @@ pnpm dev                     # → http://localhost:3000
 
 Not every env var is required for local work:
 
-| Variable                     | Needed for                                                                                    |
-| ---------------------------- | --------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`               | Anything that reads/writes APY history (Neon Postgres)                                        |
-| `THEGRAPH_API_KEY`           | `pnpm codegen` and the Compound V3 adapter ([free key](https://thegraph.com/studio/apikeys/)) |
-| `NEXT_PUBLIC_INFURA_API_KEY` | On-chain reads (wallet positions)                                                             |
-| Everything else              | Optional locally — rate limiting and analytics no-op when unset                               |
+| Variable                                               | Needed for                                                                                                           |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                         | Anything that reads/writes APY history (Neon Postgres)                                                               |
+| `THEGRAPH_API_KEY`                                     | `pnpm codegen` and the Compound V3 adapter ([free key](https://thegraph.com/studio/apikeys/))                        |
+| `NEXT_PUBLIC_RPC_PROVIDER` + `NEXT_PUBLIC_RPC_API_KEY` | Browser RPC config; `pnpm dev` and `pnpm build` need both                                                            |
+| `RPC_API_KEY` / `RPC_API_KEY_SECRET`                   | Server RPC config: server wallet reads and Blend need it. For keyless local Blend reads, set `RPC_URL_STELLAR` alone |
+| Everything else                                        | Optional locally — rate limiting and analytics no-op when unset                                                      |
 
-Adapter work only touches GraphQL APIs and subgraphs — you can build and test an adapter
-with just `THEGRAPH_API_KEY`, no database needed.
+Most adapter work only touches GraphQL APIs and subgraphs — you can build and test those
+adapters with just `THEGRAPH_API_KEY`, no database needed. Blend reads Soroban RPC, so it
+needs the server RPC config or `RPC_URL_STELLAR`.
+
+Scripts run through `pnpm <script>` (they use `tsconfig.scripts.json`). Running
+`pnpm exec tsx` directly on a script that reaches the server RPC config needs
+`--tsconfig tsconfig.scripts.json`; otherwise `server-only` throws a misleading "Client
+Component" error.
 
 ## Quality bar
 
