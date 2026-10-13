@@ -143,7 +143,11 @@ async function loadEvm(
   if (addresses.length === 0) return emptyFamily()
   const [adapters, holdings] = await Promise.allSettled([
     loadAdapters('evm', addresses, deps.evmAdapters, sourceTimeoutMs(deps)),
-    withTimeout(deps.evmHoldings(addresses), sourceTimeoutMs(deps)),
+    withTimeout(
+      // A synchronous throw must reject this source, not the whole family.
+      Promise.resolve().then(() => deps.evmHoldings(addresses)),
+      sourceTimeoutMs(deps)
+    ),
   ])
   const result =
     adapters.status === 'fulfilled' ? adapters.value : emptyFamily()
@@ -175,7 +179,10 @@ async function loadStellar(
       deps.stellarAdapters,
       sourceTimeoutMs(deps)
     ),
-    withTimeout(deps.stellarHoldings(addresses), sourceTimeoutMs(deps)),
+    withTimeout(
+      Promise.resolve().then(() => deps.stellarHoldings(addresses)),
+      sourceTimeoutMs(deps)
+    ),
   ])
   const result =
     adapters.status === 'fulfilled' ? adapters.value : emptyFamily()

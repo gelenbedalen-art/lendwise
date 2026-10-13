@@ -247,17 +247,52 @@ describe('getEvmWalletHoldings', () => {
   })
 
   it('starts a chain time limit when its read starts, not while it waits', async () => {
-    const many = [1, 2, 3].map((n) => chain(n, `c${n}`))
+    // Timed from enqueue, chain 4 would end at 160 ms, past the 100 ms limit.
+    const many = [1, 2, 3, 4].map((n) => chain(n, `c${n}`))
     const d = deps(
       async () => {
-        await new Promise((r) => setTimeout(r, 30))
+        await new Promise((r) => setTimeout(r, 40))
         return { native: [10n ** 18n], tokens: [[]] }
       },
-      { chains: many, concurrency: 1, chainTimeoutMs: 50 }
+      { chains: many, concurrency: 1, chainTimeoutMs: 100 }
     )
     const r = await getEvmWalletHoldings([A], d)
     expect(r.failedNetworks).toEqual([])
-    expect(r.holdings).toHaveLength(3)
+    expect(r.holdings).toHaveLength(4)
+  })
+
+  it('does not start a chain when 500 ms or less of budget remain', async () => {
+    const many = [1, 2, 3].map((n) => chain(n, `c${n}`))
+    const d = deps(
+      async () => {
+        await new Promise((r) => setTimeout(r, 250))
+        return { native: [10n ** 18n], tokens: [[]] }
+      },
+      { chains: many, concurrency: 1, chainTimeoutMs: 5_000, budgetMs: 700 }
+    )
+    const t0 = Date.now()
+    const r = await getEvmWalletHoldings([A], d)
+    expect(Date.now() - t0).toBeLessThan(1_000)
+    // c2 would start with ~450 ms left: not started, nor is c3.
+    expect(r.holdings.map((h) => h.network)).toEqual(['c1'])
+    expect(r.failedNetworks).toEqual(['c2', 'c3'])
+    expect(d.read).toHaveBeenCalledTimes(1)
+  })
+
+  it('clamps a chain time limit to the budget left', async () => {
+    const many = [1, 2].map((n) => chain(n, `c${n}`))
+    const d = deps(byChain({ c1: 'hang', c2: 'hang' }), {
+      chains: many,
+      concurrency: 1,
+      chainTimeoutMs: 10_000,
+      budgetMs: 700,
+    })
+    const t0 = Date.now()
+    const r = await getEvmWalletHoldings([A], d)
+    expect(Date.now() - t0).toBeLessThan(2_000)
+    expect(r.failedNetworks).toEqual(['c1', 'c2'])
+    expect(r.holdings).toEqual([])
+    expect(d.read).toHaveBeenCalledTimes(1)
   })
 
   it('reads nothing without an owner', async () => {

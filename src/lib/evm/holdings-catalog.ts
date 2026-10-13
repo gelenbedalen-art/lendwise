@@ -114,7 +114,7 @@ export async function loadHoldingPrices(
     WHERE (p.chain_id, lower(p.asset_address)) IN (${pairs})
       AND h.hour >= now() - make_interval(hours => ${PRICE_MAX_AGE_HOURS})
       AND coalesce(h.last_asset_price_usd, h.asset_price_usd) > 0
-    ORDER BY p.chain_id, lower(p.asset_address), h.hour DESC
+    ORDER BY p.chain_id, lower(p.asset_address), h.hour DESC, p.id
   `)
   return holdingPriceMap(res.rows as unknown as HoldingPriceRow[])
 }

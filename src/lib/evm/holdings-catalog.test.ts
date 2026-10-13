@@ -147,7 +147,7 @@ describe('loadHoldingPrices', () => {
     expect(q).toContain('coalesce(h.last_asset_price_usd, h.asset_price_usd)')
     expect(q).toContain('h.hour >= now() - make_interval(hours =>')
     expect(q).toContain(
-      'ORDER BY p.chain_id, lower(p.asset_address), h.hour DESC'
+      'ORDER BY p.chain_id, lower(p.asset_address), h.hour DESC, p.id'
     )
   })
 })

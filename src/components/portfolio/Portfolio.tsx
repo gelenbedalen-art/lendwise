@@ -16,6 +16,7 @@ import {
   networkName,
   orphanRiskRows,
   reportedHealthFactors,
+  topWalletSlices,
   walletBalanceBreakdown,
   walletBalanceRows,
 } from '@/lib/portfolio/view'
@@ -174,7 +175,7 @@ export function Portfolio() {
         : walletBreakdown.totalUsd * rate,
     count: walletData.length,
     unpriced: walletBreakdown.unpriced,
-    breakdown: walletBreakdown.slices.map((slice, idx) => ({
+    breakdown: topWalletSlices(walletBreakdown.slices).map((slice, idx) => ({
       name: networkName(slice.network),
       value: slice.share,
       color: PROTOCOL_COLORS[idx % PROTOCOL_COLORS.length],

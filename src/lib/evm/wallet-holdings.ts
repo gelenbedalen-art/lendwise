@@ -36,6 +36,8 @@ export interface EvmHoldingsDeps {
   chainTimeoutMs?: number
   /** Chains read at a time; defaults to EVM_CHAIN_CONCURRENCY. */
   concurrency?: number
+  /** Whole-read budget; defaults to EVM_HOLDINGS_BUDGET_MS. */
+  budgetMs?: number
   read?: typeof readChainBalances
 }
 
@@ -45,7 +47,18 @@ export const EVM_CHAIN_TIMEOUT_MS = 8_000
 /** One HTTP attempt: short enough to leave room for the fallback RPC inside EVM_CHAIN_TIMEOUT_MS. */
 export const EVM_RPC_TIMEOUT_MS = 3_500
 
-/** Chains read at once: keeps a portfolio load's burst under the Infura key's rate limit. */
+/** Under SOURCE_TIMEOUT_MS (12 s), so the read returns what it has before the source limit. */
+export const EVM_HOLDINGS_BUDGET_MS = 11_000
+
+/** A chain whose turn comes with this much budget left or less is not started. */
+const MIN_CHAIN_BUDGET_MS = 500
+
+/**
+ * Chains read at once: keeps a portfolio load's burst under the Infura key's
+ * rate limit. `withTimeout` does not cancel the underlying RPC requests (viem
+ * has no per-request abort), so during a slowdown more than this many chains'
+ * requests can be in flight briefly.
+ */
 export const EVM_CHAIN_CONCURRENCY = 4
 
 /** Below this a balance shows as 0 at the table's 7 decimals: not a holding. */
@@ -110,8 +123,8 @@ function chainHoldings(
 /**
  * Native and catalogue-token balances of every owner on every chain, a few
  * chains at a time. Each chain settles on its own, under its own time limit
- * that starts when its read starts: a failed chain is
- * named in `failedNetworks` and the others are still returned. Prices are
+ * that starts when its read starts, all within one budget: a chain that finds
+ * the budget spent is not started. A failed chain is named in `failedNetworks` and the others are still returned. Prices are
  * read alongside; without them the balances come back unpriced.
  */
 export async function getEvmWalletHoldings(
@@ -121,6 +134,7 @@ export async function getEvmWalletHoldings(
   if (owners.length === 0) return { holdings: [], failedNetworks: [] }
   const read = deps.read ?? readChainBalances
   const timeoutMs = deps.chainTimeoutMs ?? EVM_CHAIN_TIMEOUT_MS
+  const deadline = Date.now() + (deps.budgetMs ?? EVM_HOLDINGS_BUDGET_MS)
 
   const tokens = await deps.tokens(deps.chains.map((c) => c.id))
   const priceRead = deps
@@ -144,6 +158,8 @@ export async function getEvmWalletHoldings(
     deps.chains,
     deps.concurrency ?? EVM_CHAIN_CONCURRENCY,
     async (chain) => {
+      const remaining = deadline - Date.now()
+      if (remaining <= MIN_CHAIN_BUDGET_MS) throw new Error('budget exhausted')
       const chainTokens = tokens.filter((t) => t.chainId === chain.id)
       const balances = await withTimeout(
         read(chain.client, {
@@ -151,7 +167,7 @@ export async function getEvmWalletHoldings(
           tokens: chainTokens.map((t) => t.address),
           multicall3: chain.multicall3,
         }),
-        timeoutMs
+        Math.min(timeoutMs, remaining)
       )
       return chainHoldings(chain, owners, chainTokens, balances)
     }

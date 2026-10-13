@@ -12,6 +12,7 @@ import {
   orphanRiskRows,
   reportedHealthFactors,
   sortableHealth,
+  topWalletSlices,
   walletBalanceBreakdown,
   walletBalanceRows,
 } from './view'
@@ -286,5 +287,32 @@ describe('walletBalanceBreakdown', () => {
       unpriced: 0,
       slices: [],
     })
+  })
+})
+
+describe('topWalletSlices', () => {
+  const slice = (n: number) => ({
+    network: `n${n}`,
+    valueUsd: 100 - n,
+    share: 10 - n,
+  })
+
+  it('folds the tail into one other slice', () => {
+    const slices = [1, 2, 3, 4, 5, 6, 7, 8].map(slice)
+    const top = topWalletSlices(slices)
+    expect(top).toHaveLength(6)
+    expect(top.slice(0, 5)).toEqual(slices.slice(0, 5))
+    expect(top[5]).toEqual({
+      network: 'other',
+      valueUsd: slices.slice(5).reduce((a, s) => a + s.valueUsd, 0),
+      share: slices.slice(5).reduce((a, s) => a + s.share, 0),
+    })
+  })
+
+  it('leaves max or fewer slices unchanged', () => {
+    const three = [1, 2, 3].map(slice)
+    expect(topWalletSlices(three)).toEqual(three)
+    const six = [1, 2, 3, 4, 5, 6].map(slice)
+    expect(topWalletSlices(six)).toEqual(six)
   })
 })

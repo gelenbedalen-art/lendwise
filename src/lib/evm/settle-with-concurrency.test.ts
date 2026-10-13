@@ -65,6 +65,43 @@ describe('settleWithConcurrency', () => {
     ])
   })
 
+  it('captures a synchronous throw and still runs the other items', async () => {
+    const boom = new Error('boom')
+    const r = await settleWithConcurrency([0, 1, 2], 2, ((i: number) => {
+      if (i === 1) throw boom
+      return Promise.resolve(i)
+    }) as (i: number) => Promise<number>)
+    expect(r).toEqual([
+      { status: 'fulfilled', value: 0 },
+      { status: 'rejected', reason: boom },
+      { status: 'fulfilled', value: 2 },
+    ])
+  })
+
+  it.each([NaN, 0, -3, Infinity])(
+    'processes every item with limit %s',
+    async (limit) => {
+      const r = await settleWithConcurrency([1, 2, 3], limit, async (n) => n)
+      expect(r).toEqual([
+        { status: 'fulfilled', value: 1 },
+        { status: 'fulfilled', value: 2 },
+        { status: 'fulfilled', value: 3 },
+      ])
+    }
+  )
+
+  it('floors a fractional limit', async () => {
+    let inFlight = 0
+    let peak = 0
+    await settleWithConcurrency([1, 2, 3, 4], 2.9, async () => {
+      inFlight++
+      peak = Math.max(peak, inFlight)
+      await tick()
+      inFlight--
+    })
+    expect(peak).toBe(2)
+  })
+
   it('returns [] for empty input', async () => {
     expect(await settleWithConcurrency([], 4, async () => 1)).toEqual([])
   })

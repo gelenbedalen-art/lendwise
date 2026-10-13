@@ -36,8 +36,8 @@ const getEthBalanceAbi = [
 
 /**
  * One multicall per chain: for each owner, `getEthBalance` then every
- * `balanceOf`. A failed call is null; if every call failed that is the RPC,
- * not the wallet, and the chain rejects.
+ * `balanceOf`. A failed call is null; if every call failed, or a whole chunk
+ * did, that is the RPC, not the wallet, and the chain rejects.
  */
 async function readWithMulticall(
   client: BalanceClient,
@@ -67,6 +67,18 @@ async function readWithMulticall(
   })
   if (results.every((r) => r.status !== 'success')) {
     throw new Error(`every multicall call failed (${results.length} calls)`)
+  }
+  // viem stamps a failed chunk's one error on every call of the chunk; it
+  // comes from the aggregate3 read, a per-call revert names its own function.
+  if (
+    results.some(
+      (r) =>
+        r.status === 'failure' &&
+        (r.error as { functionName?: unknown } | undefined)?.functionName ===
+          'aggregate3'
+    )
+  ) {
+    throw new Error('multicall chunk failed')
   }
   const values = results.map((r) =>
     r.status === 'success' ? (r.result as bigint) : null

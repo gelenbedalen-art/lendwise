@@ -119,6 +119,23 @@ export interface WalletNetworkSlice {
   share: number
 }
 
+/** The first `max - 1` slices and the rest folded into one `other`: a donut stays readable. */
+export function topWalletSlices(
+  slices: WalletNetworkSlice[],
+  max = 6
+): WalletNetworkSlice[] {
+  if (slices.length <= max) return slices
+  const rest = slices.slice(max - 1)
+  return [
+    ...slices.slice(0, max - 1),
+    {
+      network: 'other',
+      valueUsd: rest.reduce((a, s) => a + s.valueUsd, 0),
+      share: rest.reduce((a, s) => a + s.share, 0),
+    },
+  ]
+}
+
 /** Wallet rows grouped by network: priced value per network, largest first. */
 export function walletBalanceBreakdown(rows: WalletBalanceRow[]): {
   totalUsd: number | null

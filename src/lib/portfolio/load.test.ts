@@ -177,6 +177,72 @@ describe('loadPortfolio', () => {
     expect(evmHoldings).toHaveBeenCalledWith([EVM])
   })
 
+  it('keeps EVM positions when the EVM wallet read throws synchronously', async () => {
+    const result = await loadPortfolio(
+      wallets,
+      deps({
+        evmHoldings: () => {
+          throw new Error('sync boom')
+        },
+      })
+    )
+    expect(result.positions.supply.aave_v3).toEqual([supply('aave')])
+    expect(result.failures).toEqual([
+      {
+        chainFamily: 'evm',
+        source: 'evm_wallet',
+        message: 'Temporarily unavailable',
+      },
+    ])
+  })
+
+  it('keeps Stellar positions when the Stellar wallet read throws synchronously', async () => {
+    const result = await loadPortfolio(
+      wallets,
+      deps({
+        stellarHoldings: () => {
+          throw new Error('sync boom')
+        },
+      })
+    )
+    expect(result.positions.supply['blend_v2.1']).toEqual([supply('blend')])
+    expect(result.failures).toEqual([
+      {
+        chainFamily: 'stellar',
+        source: 'stellar_wallet',
+        message: 'Temporarily unavailable',
+      },
+    ])
+  })
+
+  it('reports both the EVM adapter and the EVM wallet read when both reject', async () => {
+    const stellarHolding = { assetCode: 'XLM' } as unknown as WalletHolding
+    const result = await loadPortfolio(
+      wallets,
+      deps({
+        evmAdapters: { aave_v3: async () => failing('rpc down') },
+        evmHoldings: async () => {
+          throw new Error('catalogue down')
+        },
+        stellarHoldings: async () => [stellarHolding],
+      })
+    )
+    expect(result.failures).toEqual([
+      {
+        chainFamily: 'evm',
+        source: 'aave_v3',
+        message: 'Temporarily unavailable',
+      },
+      {
+        chainFamily: 'evm',
+        source: 'evm_wallet',
+        message: 'Temporarily unavailable',
+      },
+    ])
+    expect(result.positions.supply['blend_v2.1']).toEqual([supply('blend')])
+    expect(result.holdings).toEqual([stellarHolding])
+  })
+
   it('keeps the EVM side and reports the Stellar adapter that failed', async () => {
     const result = await loadPortfolio(
       wallets,

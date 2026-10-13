@@ -104,6 +104,33 @@ describe('readChainBalances', () => {
     ).rejects.toThrow(/every multicall call failed \(3 calls\)/)
   })
 
+  it('fails the chain when a multicall chunk failed', async () => {
+    const ok = { status: 'success', result: 1n }
+    const chunk = {
+      status: 'failure',
+      error: { functionName: 'aggregate3' },
+    }
+    const c = client({ multicall: vi.fn(async () => [ok, ok, chunk, chunk]) })
+    await expect(
+      readChainBalances(c, { owners: [A, B], tokens: [T1], multicall3: MC })
+    ).rejects.toThrow(/multicall chunk failed/)
+  })
+
+  it('keeps a single reverted call as null', async () => {
+    const ok = { status: 'success', result: 1n }
+    const revert = {
+      status: 'failure',
+      error: { functionName: 'balanceOf' },
+    }
+    const c = client({ multicall: vi.fn(async () => [ok, ok, ok, revert]) })
+    const r = await readChainBalances(c, {
+      owners: [A, B],
+      tokens: [T1],
+      multicall3: MC,
+    })
+    expect(r.tokens).toEqual([[1n], [null]])
+  })
+
   it('fails the chain when every token read failed without multicall3', async () => {
     const c = client({
       readContract: vi.fn(async () => {
