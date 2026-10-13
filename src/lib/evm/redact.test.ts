@@ -24,4 +24,23 @@ describe('redactRpcSecrets', () => {
     expect(out).not.toMatch(/key1|key2/)
     expect(out.match(/infura\.io\/v3\/\*\*\*/g)).toHaveLength(2)
   })
+
+  it('masks the configured key, secret and Basic header wherever they appear', () => {
+    const secret = 'serversecret'
+    const basic = Buffer.from(`:${secret}`).toString('base64')
+    const text = redactRpcSecrets(
+      new Error(
+        `failed https://rpc.example.org/k/serverkey ${secret} ${basic}`
+      ),
+      ['serverkey', secret]
+    )
+    expect(text).not.toMatch(/serverkey|serversecret/)
+    expect(text).not.toContain(basic)
+  })
+
+  it('ignores empty or missing secrets', () => {
+    expect(redactRpcSecrets('plain message', [undefined, ''])).toBe(
+      'plain message'
+    )
+  })
 })
