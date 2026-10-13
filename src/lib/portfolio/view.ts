@@ -1,12 +1,22 @@
 import { protocolVersionName } from '@/config/protocols-meta'
+import { CHAIN_BY_SLUG } from '@/lib/protocols/core/toolkit'
 import type { HealthFactorResult, RiskAccountResult } from '@/lib/risk/types'
 import type { BorrowPosition } from '@/types'
 
 import {
+  EVM_WALLET_SOURCE,
   type PortfolioPartialFailure,
   STELLAR_WALLET_SOURCE,
-  type StellarHolding,
+  type WalletHolding,
 } from './types'
+
+/** Chain registry display name for a slug, else the capitalized slug. */
+export function networkName(slug: string): string {
+  return (
+    (CHAIN_BY_SLUG as Record<string, { name: string } | undefined>)[slug]
+      ?.name ?? slug.charAt(0).toUpperCase() + slug.slice(1)
+  )
+}
 
 export type BorrowRow = BorrowPosition & { risk?: HealthFactorResult }
 
@@ -60,6 +70,10 @@ export function sortableHealth(row: BorrowRow): number {
 export function failureLabel(f: PortfolioPartialFailure): string {
   const family = f.chainFamily === 'evm' ? 'EVM' : 'Stellar'
   if (f.source === STELLAR_WALLET_SOURCE) return 'Stellar wallet'
+  if (f.source === EVM_WALLET_SOURCE) return 'EVM wallet'
+  if (f.source.startsWith(`${EVM_WALLET_SOURCE}:`)) {
+    return `EVM wallet · ${networkName(f.source.slice(EVM_WALLET_SOURCE.length + 1))}`
+  }
   if (f.source === f.chainFamily) return family
   return `${family} · ${protocolVersionName(f.source)}`
 }
@@ -76,12 +90,12 @@ export interface WalletBalanceRow {
 
 /** Wallet holdings as table rows: highest value first, unpriced last, then by code. */
 export function walletBalanceRows(
-  holdings: StellarHolding[]
+  holdings: WalletHolding[]
 ): WalletBalanceRow[] {
   return holdings
     .map((h) => ({
-      id: `${h.owner}:${h.code}:${h.issuer ?? 'native'}`,
-      network: 'stellar',
+      id: `${h.network}:${h.owner}:${h.code}:${h.issuer ?? 'native'}`,
+      network: h.network,
       userAddress: h.owner,
       assetCode: h.code,
       issuer: h.issuer,
@@ -103,6 +117,23 @@ export interface WalletNetworkSlice {
   valueUsd: number
   /** Percentage (0-100) of the total priced value. */
   share: number
+}
+
+/** The first `max - 1` slices and the rest folded into one `other`: a donut stays readable. */
+export function topWalletSlices(
+  slices: WalletNetworkSlice[],
+  max = 6
+): WalletNetworkSlice[] {
+  if (slices.length <= max) return slices
+  const rest = slices.slice(max - 1)
+  return [
+    ...slices.slice(0, max - 1),
+    {
+      network: 'other',
+      valueUsd: rest.reduce((a, s) => a + s.valueUsd, 0),
+      share: rest.reduce((a, s) => a + s.share, 0),
+    },
+  ]
 }
 
 /** Wallet rows grouped by network: priced value per network, largest first. */

@@ -16,6 +16,8 @@ import {
   zksync,
 } from 'viem/chains'
 
+import { isRpcProvider, rpcUrl } from '@/config/rpc-providers'
+import type { RpcNetwork, RpcProvider } from '@/config/rpc-providers'
 import type { RegisteredChainId } from '@/lib/protocols/core/toolkit'
 
 /**
@@ -27,63 +29,89 @@ import type { RegisteredChainId } from '@/lib/protocols/core/toolkit'
  * chain ingested for data but absent here is simply view-only in the UI —
  * `isTxSupported` is the one predicate consumers ask.
  *
- * Membership = the Infura project has the network enabled (checked live before
- * adding — an entry whose RPC 403s is worse than none). Remaining view-only
- * chains (gnosis, metis, soneium, sonic, plasma, ink, xlayer, katana, …) are
- * not served by Infura; adding one means finding it an RPC first.
+ * Membership = the network is enabled on both of the provider's keys, browser
+ * and server (checked live before adding — an entry whose RPC 403s is worse
+ * than none). Remaining view-only chains (gnosis, metis, soneium, sonic,
+ * plasma, ink, xlayer, katana, …) are not served by Infura; adding one means
+ * finding it an RPC first.
  *
  * EVM-only by nature (wagmi). A future non-EVM execution stack (e.g. Stellar
  * wallets for Blend) gets its own module; it shares the registry, not this file.
  */
 
-if (!process.env.NEXT_PUBLIC_INFURA_API_KEY) {
-  throw new Error('NEXT_PUBLIC_INFURA_API_KEY is not defined')
+// Literal references: Next.js inlines only those into the browser bundle.
+const RPC_PROVIDER = process.env.NEXT_PUBLIC_RPC_PROVIDER
+const RPC_API_KEY = process.env.NEXT_PUBLIC_RPC_API_KEY
+
+if (!isRpcProvider(RPC_PROVIDER)) {
+  throw new Error('NEXT_PUBLIC_RPC_PROVIDER is missing or not a known provider')
+}
+if (!RPC_API_KEY) {
+  throw new Error('NEXT_PUBLIC_RPC_API_KEY is not defined')
+}
+const provider: RpcProvider = RPC_PROVIDER
+const browserKey: string = RPC_API_KEY
+
+/**
+ * Browser URL of a tx chain: the restricted browser key (origins, read
+ * methods, credit caps set at the provider). Server reads use the server
+ * key through `rpc.server.ts`, never this.
+ */
+function browserRpc(network: RpcNetwork): string {
+  const url = rpcUrl(provider, network, browserKey)
+  if (!url) throw new Error(`${provider} does not serve ${network}`)
+  return url
 }
 
-const INFURA_API_KEY = process.env.NEXT_PUBLIC_INFURA_API_KEY
-
-const infura = (subdomain: string) =>
-  `https://${subdomain}.infura.io/v3/${INFURA_API_KEY}`
+const MULTICALL3 = '0xcA11bde05977b3631167028862bE2a173976CA11'
 
 // Not in our viem version yet — minimal definitions, explorers can come later.
+// `rpcUrls.default` is what wallets receive when the app adds a chain, so it
+// is never a keyed URL: the wallet would call it from its own origin, which is
+// not in the browser key's allowlist. wagmi reads go through `rpc` instead.
+// multicall3 (canonical address) was checked on-chain on 2026-10-13, so
+// `blockCreated` is left out.
 const hyperevm = defineChain({
   id: 999,
   name: 'HyperEVM',
   nativeCurrency: { name: 'Hyperliquid', symbol: 'HYPE', decimals: 18 },
-  rpcUrls: { default: { http: [infura('hyperevm-mainnet')] } },
+  rpcUrls: { default: { http: ['https://rpc.hyperliquid.xyz/evm'] } },
+  contracts: { multicall3: { address: MULTICALL3 } },
 })
 
 const megaeth = defineChain({
   id: 4326,
   name: 'MegaETH',
   nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: { default: { http: [infura('megaeth-mainnet')] } },
+  rpcUrls: { default: { http: ['https://mainnet.megaeth.com/rpc'] } },
+  contracts: { multicall3: { address: MULTICALL3 } },
 })
 
 const monad = defineChain({
   id: 143,
   name: 'Monad',
   nativeCurrency: { name: 'Monad', symbol: 'MON', decimals: 18 },
-  rpcUrls: { default: { http: [infura('monad-mainnet')] } },
+  rpcUrls: { default: { http: ['https://rpc.monad.xyz'] } },
+  contracts: { multicall3: { address: MULTICALL3 } },
 })
 
 export const TX_CHAINS = [
-  { ...mainnet, rpc: infura('mainnet') },
-  { ...arbitrum, rpc: infura('arbitrum-mainnet') },
-  { ...optimism, rpc: infura('optimism-mainnet') },
-  { ...polygon, rpc: infura('polygon-mainnet') },
-  { ...base, rpc: infura('base-mainnet') },
-  { ...linea, rpc: infura('linea-mainnet') },
-  { ...avalanche, rpc: infura('avalanche-mainnet') },
-  { ...bsc, rpc: infura('bsc-mainnet') },
-  { ...celo, rpc: infura('celo-mainnet') },
-  { ...zksync, rpc: infura('zksync-mainnet') },
-  { ...mantle, rpc: infura('mantle-mainnet') },
-  { ...scroll, rpc: infura('scroll-mainnet') },
-  { ...unichain, rpc: infura('unichain-mainnet') },
-  { ...hyperevm, rpc: infura('hyperevm-mainnet') },
-  { ...megaeth, rpc: infura('megaeth-mainnet') },
-  { ...monad, rpc: infura('monad-mainnet') },
+  { ...mainnet, rpc: browserRpc('ethereum') },
+  { ...arbitrum, rpc: browserRpc('arbitrum') },
+  { ...optimism, rpc: browserRpc('optimism') },
+  { ...polygon, rpc: browserRpc('polygon') },
+  { ...base, rpc: browserRpc('base') },
+  { ...linea, rpc: browserRpc('linea') },
+  { ...avalanche, rpc: browserRpc('avalanche') },
+  { ...bsc, rpc: browserRpc('bsc') },
+  { ...celo, rpc: browserRpc('celo') },
+  { ...zksync, rpc: browserRpc('zksync') },
+  { ...mantle, rpc: browserRpc('mantle') },
+  { ...scroll, rpc: browserRpc('scroll') },
+  { ...unichain, rpc: browserRpc('unichain') },
+  { ...hyperevm, rpc: browserRpc('hyperevm') },
+  { ...megaeth, rpc: browserRpc('megaeth') },
+  { ...monad, rpc: browserRpc('monad') },
 ] as const
 
 /** Compile-time guard: every tx chain must exist in the chain registry. */

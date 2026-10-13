@@ -18,7 +18,7 @@ import { Input } from '@/components/ui/input'
 import { WalletAvatar } from '@/components/wallet/WalletAvatar'
 import { useCurrency } from '@/contexts'
 import { formatCompactCurrency } from '@/lib/format-currency'
-import type { WalletBalanceRow } from '@/lib/portfolio/view'
+import { type WalletBalanceRow, networkName } from '@/lib/portfolio/view'
 import { formatAddress } from '@/lib/utils'
 
 import { addressColumn } from './columns.shared'
@@ -96,7 +96,7 @@ export function WalletBalancesTable({ data }: { data: WalletBalanceRow[] }) {
     label: (
       <div className="flex items-center gap-2">
         <NetworkIcon networkSlug={v} />
-        {v.charAt(0).toUpperCase() + v.slice(1)}
+        {networkName(v)}
       </div>
     ),
   }))

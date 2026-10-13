@@ -5,7 +5,7 @@ import { CHAIN_BY_ID } from '@/lib/protocols/core/toolkit'
  *
  * Sourced from the chain registry (core/toolkit/chain-slugs.ts), which is pure
  * data — deliberately NOT from `@/config/chains`: that module throws at import
- * time when NEXT_PUBLIC_INFURA_API_KEY is unset, which is wrong to drag into a
+ * time when NEXT_PUBLIC_RPC_API_KEY is unset, which is wrong to drag into a
  * DB resolver.
  *
  * `products.chain_name` cannot be used for this: it is inconsistent across

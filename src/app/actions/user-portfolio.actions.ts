@@ -4,6 +4,12 @@ import {
   APP_ADAPTERS,
   stellarPositionAdapters,
 } from '@/config/protocols-server'
+import {
+  loadCatalogTokens,
+  loadHoldingPrices,
+} from '@/lib/evm/holdings-catalog'
+import { holdingsChains } from '@/lib/evm/holdings-chains'
+import { getEvmWalletHoldings } from '@/lib/evm/wallet-holdings'
 import { loadPortfolio } from '@/lib/portfolio/load'
 import { sanitizeWalletInputs } from '@/lib/portfolio/routing'
 import type {
@@ -28,6 +34,12 @@ export async function loadUserPortfolio(
     evmAdapters,
     stellarAdapters: stellarPositionAdapters(),
     stellarHoldings: (addresses) => getStellarWalletHoldings(addresses),
+    evmHoldings: (addresses) =>
+      getEvmWalletHoldings(addresses, {
+        chains: holdingsChains(),
+        tokens: loadCatalogTokens,
+        prices: loadHoldingPrices,
+      }),
     computeRisk: (accounts) => computeRiskAccounts(accounts),
   })
 }

@@ -1,19 +1,24 @@
+import { inspect } from 'node:util'
 import type { Address } from 'viem'
 
+import { redactRpcSecrets } from '@/lib/evm/redact'
 import type { RiskAccount, RiskAccountResult } from '@/lib/risk/types'
 import type { BorrowPosition, SupplyPosition, UserPosition } from '@/types'
 
 import { routePortfolioWallets } from './routing'
 import {
+  EVM_WALLET_SOURCE,
+  type EvmWalletHoldings,
   type PortfolioChainFamily,
   type PortfolioPartialFailure,
   type PortfolioWalletInput,
   STELLAR_WALLET_SOURCE,
-  type StellarHolding,
   type UserPortfolioResult,
+  type WalletHolding,
   emptyUserPositions,
   mergeUserPositions,
 } from './types'
+import { withTimeout } from './with-timeout'
 
 /** What the merge needs from any adapter, EVM or Stellar. */
 export interface PositionsSource<A extends string> {
@@ -30,7 +35,8 @@ type Loaders<A extends string> = Record<
 export interface PortfolioDeps {
   evmAdapters: Loaders<Address>
   stellarAdapters: Loaders<string>
-  stellarHoldings(addresses: string[]): Promise<StellarHolding[]>
+  evmHoldings(addresses: Address[]): Promise<EvmWalletHoldings>
+  stellarHoldings(addresses: string[]): Promise<WalletHolding[]>
   computeRisk(accounts: RiskAccount[]): Promise<RiskAccountResult[]>
   /** Per-source time limit; defaults to `SOURCE_TIMEOUT_MS`. */
   sourceTimeoutMs?: number
@@ -39,25 +45,10 @@ export interface PortfolioDeps {
 /** Longest a single source may take before it becomes a partial failure. */
 export const SOURCE_TIMEOUT_MS = 12_000
 
-/**
- * Rejects when `promise` has not settled in `ms`. The timer is cleared once
- * the race settles, so nothing keeps the process alive.
- */
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const expiry = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`timed out after ${ms}ms`)),
-      Math.max(0, ms)
-    )
-  })
-  return Promise.race([promise, expiry]).finally(() => clearTimeout(timer))
-}
-
 interface FamilyResult {
   positions: UserPosition
   riskAccounts: RiskAccount[]
-  holdings: StellarHolding[]
+  holdings: WalletHolding[]
   failures: PortfolioPartialFailure[]
 }
 
@@ -70,16 +61,24 @@ const emptyFamily = (): FamilyResult => ({
 
 const GENERIC_FAILURE_MESSAGE = 'Temporarily unavailable'
 
+/** Log-safe text of a failure: an HTTP error object carries the request's URL and headers. */
+const loggable = (reason: unknown) =>
+  redactRpcSecrets(inspect(reason, { depth: 3 }))
+
 /**
- * Upstream errors can carry RPC URLs with keys or internal hosts: the raw
- * reason stays in the server logs, the client only gets a generic message.
+ * Upstream errors can carry RPC URLs with keys or internal hosts: the
+ * redacted reason goes to the server logs, the client only gets a generic
+ * message.
  */
 function failure(
   chainFamily: PortfolioChainFamily,
   source: string,
   reason: unknown
 ): PortfolioPartialFailure {
-  console.error(`[portfolio] ${chainFamily}/${source} failed:`, reason)
+  console.error(
+    `[portfolio] ${chainFamily}/${source} failed:`,
+    loggable(reason)
+  )
   return { chainFamily, source, message: GENERIC_FAILURE_MESSAGE }
 }
 
@@ -147,6 +146,37 @@ async function loadAdapters<A extends string>(
 const sourceTimeoutMs = (deps: PortfolioDeps) =>
   deps.sourceTimeoutMs ?? SOURCE_TIMEOUT_MS
 
+async function loadEvm(
+  addresses: Address[],
+  deps: PortfolioDeps
+): Promise<FamilyResult> {
+  if (addresses.length === 0) return emptyFamily()
+  const [adapters, holdings] = await Promise.allSettled([
+    loadAdapters('evm', addresses, deps.evmAdapters, sourceTimeoutMs(deps)),
+    withTimeout(
+      // A synchronous throw must reject this source, not the whole family.
+      Promise.resolve().then(() => deps.evmHoldings(addresses)),
+      sourceTimeoutMs(deps)
+    ),
+  ])
+  const result =
+    adapters.status === 'fulfilled' ? adapters.value : emptyFamily()
+  if (adapters.status === 'rejected') {
+    result.failures.push(failure('evm', 'evm', adapters.reason))
+  }
+  if (holdings.status === 'fulfilled') {
+    result.holdings = holdings.value.holdings
+    for (const slug of holdings.value.failedNetworks) {
+      result.failures.push(
+        failure('evm', `${EVM_WALLET_SOURCE}:${slug}`, `${slug} unreadable`)
+      )
+    }
+  } else {
+    result.failures.push(failure('evm', EVM_WALLET_SOURCE, holdings.reason))
+  }
+  return result
+}
+
 async function loadStellar(
   addresses: string[],
   deps: PortfolioDeps
@@ -159,7 +189,10 @@ async function loadStellar(
       deps.stellarAdapters,
       sourceTimeoutMs(deps)
     ),
-    withTimeout(deps.stellarHoldings(addresses), sourceTimeoutMs(deps)),
+    withTimeout(
+      Promise.resolve().then(() => deps.stellarHoldings(addresses)),
+      sourceTimeoutMs(deps)
+    ),
   ])
   const result =
     adapters.status === 'fulfilled' ? adapters.value : emptyFamily()
@@ -187,16 +220,7 @@ export async function loadPortfolio(
   const { evmAddresses, stellarAddresses } = routePortfolioWallets(wallets)
 
   const families: [PortfolioChainFamily, () => Promise<FamilyResult>][] = [
-    [
-      'evm',
-      () =>
-        loadAdapters(
-          'evm',
-          evmAddresses,
-          deps.evmAdapters,
-          sourceTimeoutMs(deps)
-        ),
-    ],
+    ['evm', () => loadEvm(evmAddresses, deps)],
     ['stellar', () => loadStellar(stellarAddresses, deps)],
   ]
   const settled = await Promise.allSettled(families.map(([, run]) => run()))
@@ -219,7 +243,7 @@ export async function loadPortfolio(
     try {
       riskAccounts = await deps.computeRisk(accounts)
     } catch (reason) {
-      console.error('[portfolio] risk computation failed:', reason)
+      console.error('[portfolio] risk computation failed:', loggable(reason))
     }
   }
   return {

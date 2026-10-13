@@ -1,5 +1,5 @@
 import { latestPrice } from '@/lib/db/repositories/price'
-import type { StellarHolding } from '@/lib/portfolio/types'
+import type { WalletHolding } from '@/lib/portfolio/types'
 
 /** Circle's USDC on Stellar mainnet — the only USDC priced as USDC. */
 export const CIRCLE_USDC_ISSUER =
@@ -39,9 +39,11 @@ export async function fetchHorizonBalances(
 export function holdingsFromBalances(
   owner: string,
   balances: HorizonBalance[]
-): StellarHolding[] {
-  return balances.flatMap((b): StellarHolding[] => {
+): WalletHolding[] {
+  return balances.flatMap((b): WalletHolding[] => {
     const base = {
+      chainFamily: 'stellar' as const,
+      network: 'stellar',
       owner,
       balance: Number(b.balance),
       priceUsd: null,
@@ -68,7 +70,7 @@ export function holdingsFromBalances(
   })
 }
 
-function priceSymbol(h: StellarHolding): string | null {
+function priceSymbol(h: WalletHolding): string | null {
   if (h.assetType === 'native') return 'XLM'
   if (h.code === 'USDC' && h.issuer === CIRCLE_USDC_ISSUER) return 'USDC'
   return null
@@ -82,7 +84,7 @@ export async function getStellarWalletHoldings(
     timeoutMs?: number
     price?: (symbol: string) => Promise<number | null>
   } = {}
-): Promise<StellarHolding[]> {
+): Promise<WalletHolding[]> {
   const fetchImpl = deps.fetchImpl ?? fetch
   const price = deps.price ?? latestPrice
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { StellarHolding } from '@/lib/portfolio/types'
+import type { WalletHolding } from '@/lib/portfolio/types'
 import type { RiskAccountResult } from '@/lib/risk/types'
 import type { BorrowPosition } from '@/types'
 
@@ -8,9 +8,11 @@ import {
   type WalletBalanceRow,
   attachRisk,
   failureLabel,
+  networkName,
   orphanRiskRows,
   reportedHealthFactors,
   sortableHealth,
+  topWalletSlices,
   walletBalanceBreakdown,
   walletBalanceRows,
 } from './view'
@@ -95,6 +97,23 @@ describe('portfolio view helpers', () => {
     expect(
       failureLabel({ chainFamily: 'evm', source: 'evm', message: '' })
     ).toBe('EVM')
+    expect(
+      failureLabel({ chainFamily: 'evm', source: 'evm_wallet', message: '' })
+    ).toBe('EVM wallet')
+    expect(
+      failureLabel({
+        chainFamily: 'evm',
+        source: 'evm_wallet:linea',
+        message: '',
+      })
+    ).toBe('EVM wallet · Linea')
+    expect(
+      failureLabel({
+        chainFamily: 'evm',
+        source: 'evm_wallet:unknown-net',
+        message: '',
+      })
+    ).toBe('EVM wallet · Unknown-net')
   })
 
   it('counts distinct risk accounts that have no result', () => {
@@ -111,7 +130,9 @@ describe('portfolio view helpers', () => {
 })
 
 describe('walletBalanceRows', () => {
-  const holding = (h: Partial<StellarHolding>): StellarHolding => ({
+  const holding = (h: Partial<WalletHolding>): WalletHolding => ({
+    chainFamily: 'stellar',
+    network: 'stellar',
     owner: 'GOWNER',
     assetType: 'credit',
     code: 'USDC',
@@ -133,7 +154,7 @@ describe('walletBalanceRows', () => {
     ])
     expect(rows).toEqual([
       {
-        id: 'GOWNER:USDC:GISSUER',
+        id: 'stellar:GOWNER:USDC:GISSUER',
         network: 'stellar',
         userAddress: 'GOWNER',
         assetCode: 'USDC',
@@ -148,7 +169,7 @@ describe('walletBalanceRows', () => {
     const [r] = walletBalanceRows([
       holding({ assetType: 'native', code: 'XLM', issuer: null }),
     ])
-    expect(r.id).toBe('GOWNER:XLM:native')
+    expect(r.id).toBe('stellar:GOWNER:XLM:native')
     expect(r.issuer).toBeNull()
   })
 
@@ -162,12 +183,53 @@ describe('walletBalanceRows', () => {
     expect(rows.map((r) => r.assetCode)).toEqual(['HIGH', 'LOW', 'AAA', 'ZZZ'])
   })
 
+  it('takes the network of the holding', () => {
+    const [r] = walletBalanceRows([
+      holding({
+        chainFamily: 'evm',
+        network: 'linea',
+        owner: '0xabc',
+        assetType: 'erc20',
+        code: 'USDC',
+        issuer: '0x176211869ca2b568f2a7d4ee941e073a821ee1ff',
+      }),
+    ])
+    expect(r.network).toBe('linea')
+    expect(r.id).toBe(
+      'linea:0xabc:USDC:0x176211869ca2b568f2a7d4ee941e073a821ee1ff'
+    )
+    expect(r.issuer).toBe('0x176211869ca2b568f2a7d4ee941e073a821ee1ff')
+  })
+
+  it('keeps the same native asset on two chains as two rows', () => {
+    const native = {
+      chainFamily: 'evm' as const,
+      owner: '0xabc',
+      assetType: 'native' as const,
+      code: 'ETH',
+      issuer: null,
+    }
+    const rows = walletBalanceRows([
+      holding({ ...native, network: 'ethereum' }),
+      holding({ ...native, network: 'base' }),
+    ])
+    expect(new Set(rows.map((r) => r.id)).size).toBe(2)
+  })
+
   it('keeps ids unique for the same code with different issuers', () => {
     const rows = walletBalanceRows([
       holding({ issuer: 'G1' }),
       holding({ issuer: 'G2' }),
     ])
     expect(new Set(rows.map((r) => r.id)).size).toBe(2)
+  })
+})
+
+describe('networkName', () => {
+  it('uses the registry name, else the capitalized slug', () => {
+    expect(networkName('linea')).toBe('Linea')
+    expect(networkName('stellar')).toBe('Stellar')
+    expect(networkName('somechain')).toBe('Somechain')
   })
 })
 
@@ -225,5 +287,32 @@ describe('walletBalanceBreakdown', () => {
       unpriced: 0,
       slices: [],
     })
+  })
+})
+
+describe('topWalletSlices', () => {
+  const slice = (n: number) => ({
+    network: `n${n}`,
+    valueUsd: 100 - n,
+    share: 10 - n,
+  })
+
+  it('folds the tail into one other slice', () => {
+    const slices = [1, 2, 3, 4, 5, 6, 7, 8].map(slice)
+    const top = topWalletSlices(slices)
+    expect(top).toHaveLength(6)
+    expect(top.slice(0, 5)).toEqual(slices.slice(0, 5))
+    expect(top[5]).toEqual({
+      network: 'other',
+      valueUsd: slices.slice(5).reduce((a, s) => a + s.valueUsd, 0),
+      share: slices.slice(5).reduce((a, s) => a + s.share, 0),
+    })
+  })
+
+  it('leaves max or fewer slices unchanged', () => {
+    const three = [1, 2, 3].map(slice)
+    expect(topWalletSlices(three)).toEqual(three)
+    const six = [1, 2, 3, 4, 5, 6].map(slice)
+    expect(topWalletSlices(six)).toEqual(six)
   })
 })

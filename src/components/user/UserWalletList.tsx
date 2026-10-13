@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 
 import { useConnectModal } from '@rainbow-me/rainbowkit'
-import { Check, Copy, MoreVertical, Trash2 } from 'lucide-react'
+import { Check, Copy, LogIn, MoreVertical, Trash2 } from 'lucide-react'
 import { Address } from 'viem'
 import { useAccount, useDisconnect, useEnsName } from 'wagmi'
 import { mainnet } from 'wagmi/chains'
@@ -19,6 +19,7 @@ import { NetworkFamilySelectorDialog } from '@/components/wallet/NetworkFamilySe
 import { useStellarWallet } from '@/contexts/StellarWalletContext'
 import { useMultiWalletManager } from '@/hooks/useMultiWalletManager'
 import { formatAddress } from '@/lib/utils'
+import { walletSubtitle } from '@/lib/wallet/wallet-label'
 import { type Wallet, useWalletStore } from '@/stores/walletStore'
 
 import { WalletAvatar } from '../wallet/WalletAvatar'
@@ -28,7 +29,7 @@ const WalletRow = ({ wallet }: { wallet: Wallet }) => {
   const { disconnect } = useDisconnect()
   const { updateWallet, clients, wallets } = useWalletStore()
   const { disconnectAddress } = useMultiWalletManager()
-  const { disconnectStellar } = useStellarWallet()
+  const { connectStellar, disconnectStellar } = useStellarWallet()
   const { data: ensName } = useEnsName({
     address: wallet.address as Address,
     chainId: mainnet.id, // Always resolve ENS on mainnet
@@ -72,6 +73,8 @@ const WalletRow = ({ wallet }: { wallet: Wallet }) => {
   // Display ENS name if available, otherwise formatted address
   const displayName = wallet.ens || formatAddress(wallet.address)
   const hasClient = !!clients[wallet.address.toLowerCase()]
+  const isStellar = wallet.chainFamily === 'stellar'
+  const isSignedOutStellar = isStellar && !wallet.isConnected
 
   return (
     <div
@@ -81,18 +84,14 @@ const WalletRow = ({ wallet }: { wallet: Wallet }) => {
       <div className="flex items-center gap-x-3">
         <div className="relative flex h-8 w-8 items-center justify-center rounded-full">
           <WalletAvatar address={wallet.address} size={30} />
-          {(hasClient || wallet.chainFamily === 'stellar') && (
+          {(isStellar ? wallet.isConnected : hasClient) && (
             <div className="bg-success absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white" />
           )}
         </div>
         <div className="flex flex-col">
           <span className="text-sm font-medium">{displayName}</span>
           <span className="text-muted-foreground text-xs">
-            {wallet.chainFamily === 'stellar'
-              ? 'Stellar'
-              : !hasClient
-                ? 'No client'
-                : null}
+            {walletSubtitle(wallet, hasClient)}
           </span>
         </div>
       </div>
@@ -116,12 +115,18 @@ const WalletRow = ({ wallet }: { wallet: Wallet }) => {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {isSignedOutStellar && (
+              <DropdownMenuItem onClick={() => connectStellar()}>
+                <LogIn className="mr-2 h-4 w-4" />
+                Sign in
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               onClick={handleDisconnect}
               className="text-destructive focus:text-destructive"
             >
               <Trash2 className="mr-2 h-4 w-4" />
-              Disconnect
+              {isSignedOutStellar ? 'Remove' : 'Disconnect'}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
