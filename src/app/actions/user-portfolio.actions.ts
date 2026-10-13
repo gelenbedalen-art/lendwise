@@ -4,6 +4,7 @@ import {
   APP_ADAPTERS,
   stellarPositionAdapters,
 } from '@/config/protocols-server'
+import { cachedEvmHoldings } from '@/lib/evm/holdings-cache'
 import {
   loadCatalogTokens,
   loadHoldingPrices,
@@ -27,6 +28,16 @@ const evmAdapters: Record<string, () => Promise<AppAdapter>> =
     )
   )
 
+// One read per wallet set at a time, a complete one kept 30 s: a page open
+// loads the portfolio several times and would trip the RPC rate limit.
+const evmHoldings = cachedEvmHoldings((addresses) =>
+  getEvmWalletHoldings(addresses, {
+    chains: holdingsChains(),
+    tokens: loadCatalogTokens,
+    prices: loadHoldingPrices,
+  })
+)
+
 export async function loadUserPortfolio(
   wallets: PortfolioWalletInput[]
 ): Promise<UserPortfolioResult> {
@@ -34,12 +45,7 @@ export async function loadUserPortfolio(
     evmAdapters,
     stellarAdapters: stellarPositionAdapters(),
     stellarHoldings: (addresses) => getStellarWalletHoldings(addresses),
-    evmHoldings: (addresses) =>
-      getEvmWalletHoldings(addresses, {
-        chains: holdingsChains(),
-        tokens: loadCatalogTokens,
-        prices: loadHoldingPrices,
-      }),
+    evmHoldings,
     computeRisk: (accounts) => computeRiskAccounts(accounts),
   })
 }

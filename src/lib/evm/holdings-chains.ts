@@ -6,7 +6,11 @@ import { serverRpc } from '@/config/rpc.server'
 import { chainSlugFor } from '@/lib/protocols/core/toolkit'
 
 import type { BalanceClient } from './balance-reader'
-import { EVM_RPC_TIMEOUT_MS, type HoldingsChain } from './wallet-holdings'
+import {
+  EVM_RPC_RETRY_DELAY_MS,
+  EVM_RPC_TIMEOUT_MS,
+  type HoldingsChain,
+} from './wallet-holdings'
 import { NATIVE_PRICE_TOKEN } from './wrapped-native'
 
 /** A client for a chain with no server RPC: every read rejects with `reason`. */
@@ -54,6 +58,7 @@ export function holdingsChains(): HoldingsChain[] {
             chain,
             transport: http(rpc.url, {
               timeout: EVM_RPC_TIMEOUT_MS,
+              retryDelay: EVM_RPC_RETRY_DELAY_MS,
               fetchOptions: { headers: rpc.headers },
             }),
           }) as unknown as BalanceClient)
