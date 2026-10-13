@@ -3,9 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const MULTICALL3 = '0xcA11bde05977b3631167028862bE2a173976CA11'
 
-// chains.ts reads the Infura key at import: stub it before the dynamic import.
+// chains.ts reads the RPC provider and keys at import: stub them before the dynamic import.
 async function load() {
-  vi.stubEnv('NEXT_PUBLIC_INFURA_API_KEY', 'test-key')
+  vi.stubEnv('NEXT_PUBLIC_RPC_PROVIDER', 'infura')
+  vi.stubEnv('NEXT_PUBLIC_RPC_API_KEY', 'browser-key')
+  vi.stubEnv('RPC_API_KEY', 'server-key')
+  vi.stubEnv('RPC_API_KEY_SECRET', 'server-secret')
   vi.resetModules()
   const [{ holdingsChains }, { NATIVE_PRICE_TOKEN }] = await Promise.all([
     import('./holdings-chains'),

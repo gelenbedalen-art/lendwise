@@ -609,10 +609,7 @@ function SettingsContent() {
                 {CHAINS.MAINNETS.slice(0, 3).map((chain) => (
                   <div key={chain.id} className="space-y-2">
                     <Label>{chain.name}</Label>
-                    <Input
-                      placeholder={`https://mainnet.infura.io/v3/...`}
-                      defaultValue={chain.rpc}
-                    />
+                    <Input placeholder="Custom RPC URL" />
                   </div>
                 ))}
               </div>
