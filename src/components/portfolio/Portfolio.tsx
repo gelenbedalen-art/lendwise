@@ -29,6 +29,9 @@ import { PartialDataBanner } from './PartialDataBanner'
 import PortfolioSidebar from './PortfolioSidebar'
 import { PortfolioSkeleton } from './PortfolioSkeleton'
 
+/** Quiet time before the wallet list is considered settled. */
+const PORTFOLIO_LOAD_DEBOUNCE_MS = 500
+
 export function Portfolio() {
   const { address: evmAddress, isConnected: isEvmConnected } = useAccount()
   const { wallets } = useWalletStore()
@@ -73,8 +76,13 @@ export function Portfolio() {
     useLoadUserPortfolio(portfolioWallets)
   const userPositions = portfolio.positions
 
+  // The wallet list settles over the first second (store hydration, wallet
+  // reconnect, Stellar session restore): load once it stops changing, not on
+  // every step — each load reads 16 chains.
   useEffect(() => {
-    if (portfolioWallets.length > 0) fetchPortfolio()
+    if (portfolioWallets.length === 0) return
+    const timer = setTimeout(fetchPortfolio, PORTFOLIO_LOAD_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
   }, [portfolioWallets, fetchPortfolio])
 
   const PROTOCOL_COLORS = [

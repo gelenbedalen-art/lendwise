@@ -1,5 +1,7 @@
 import { type Address, type PublicClient, erc20Abi } from 'viem'
 
+import { redactRpcSecrets } from './redact'
+
 /** The RPC calls the reader makes — a viem public client has them. */
 export type BalanceClient = Pick<
   PublicClient,
@@ -39,6 +41,21 @@ const getEthBalanceAbi = [
  * `balanceOf`. A failed call is null; if every call failed, or a whole chunk
  * did, that is the RPC, not the wallet, and the chain rejects.
  */
+/**
+ * The first failure's message, redacted and on one line, so a chain failure
+ * in the logs says why (an HTTP 429 from the provider, a timeout, …).
+ */
+function failureCause(
+  results: readonly { status: string; error?: unknown }[]
+): string {
+  const failure = results.find((r) => r.status === 'failure')
+  if (!failure) return 'unknown'
+  return redactRpcSecrets(failure.error)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200)
+}
+
 async function readWithMulticall(
   client: BalanceClient,
   req: BalanceRequest,
@@ -66,7 +83,9 @@ async function readWithMulticall(
     batchSize: MULTICALL_CHUNK_BYTES,
   })
   if (results.every((r) => r.status !== 'success')) {
-    throw new Error(`every multicall call failed (${results.length} calls)`)
+    throw new Error(
+      `every multicall call failed (${results.length} calls): ${failureCause(results)}`
+    )
   }
   // viem stamps a failed chunk's one error on every call of the chunk; it
   // comes from the aggregate3 read, a per-call revert names its own function.
@@ -78,7 +97,7 @@ async function readWithMulticall(
           'aggregate3'
     )
   ) {
-    throw new Error('multicall chunk failed')
+    throw new Error(`multicall chunk failed: ${failureCause(results)}`)
   }
   const values = results.map((r) =>
     r.status === 'success' ? (r.result as bigint) : null
