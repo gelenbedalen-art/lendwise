@@ -124,8 +124,9 @@ function chainHoldings(
  * Native and catalogue-token balances of every owner on every chain, a few
  * chains at a time. Each chain settles on its own, under its own time limit
  * that starts when its read starts, all within one budget: a chain that finds
- * the budget spent is not started. A failed chain is named in `failedNetworks` and the others are still returned. Prices are
- * read alongside; without them the balances come back unpriced.
+ * the budget spent is not started. A failed chain is named in
+ * `failedNetworks` and the others are still returned. Prices are read
+ * alongside; without them the balances come back unpriced.
  */
 export async function getEvmWalletHoldings(
   owners: Address[],
