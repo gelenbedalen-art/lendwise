@@ -54,4 +54,26 @@ describe('holdingsChains', () => {
       expect(chains.find((c) => c.slug === slug)?.multicall3).toBe(MULTICALL3)
     }
   })
+
+  it('reads every chain through the server key, with the secret as Basic auth', async () => {
+    const { chains } = await load()
+    const auth = `Basic ${Buffer.from(':server-secret').toString('base64')}`
+    for (const c of chains) {
+      const t = (c.client as unknown as { transport: unknown }).transport as {
+        url: string
+        fetchOptions?: { headers?: Record<string, string> }
+      }
+      expect(t.url).toContain('server-key')
+      expect(t.url).not.toContain('browser-key')
+      expect(t.fetchOptions?.headers?.Authorization).toBe(auth)
+    }
+  })
+
+  it('uses a plain http transport on every chain, no fallback', async () => {
+    const { chains } = await load()
+    for (const c of chains)
+      expect(
+        (c.client as unknown as { transport: { type: string } }).transport.type
+      ).toBe('http')
+  })
 })

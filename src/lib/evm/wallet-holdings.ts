@@ -44,7 +44,7 @@ export interface EvmHoldingsDeps {
 /** Longest one chain may take before it counts as failed. */
 export const EVM_CHAIN_TIMEOUT_MS = 8_000
 
-/** One HTTP attempt: short enough to leave room for the fallback RPC inside EVM_CHAIN_TIMEOUT_MS. */
+/** One HTTP attempt: leaves room for viem's retries inside EVM_CHAIN_TIMEOUT_MS. */
 export const EVM_RPC_TIMEOUT_MS = 3_500
 
 /** Under SOURCE_TIMEOUT_MS (12 s), so the read returns what it has before the source limit. */
