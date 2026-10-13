@@ -47,6 +47,13 @@ export const EVM_CHAIN_TIMEOUT_MS = 8_000
 /** One HTTP attempt: leaves room for viem's retries inside EVM_CHAIN_TIMEOUT_MS. */
 export const EVM_RPC_TIMEOUT_MS = 3_500
 
+/**
+ * Base of viem's exponential backoff between retries (500 ms, 1 s, 2 s). The
+ * provider rate-limits per second (HTTP 429): viem's default 150 ms base
+ * retries inside the same second and fails again.
+ */
+export const EVM_RPC_RETRY_DELAY_MS = 500
+
 /** Under SOURCE_TIMEOUT_MS (12 s), so the read returns what it has before the source limit. */
 export const EVM_HOLDINGS_BUDGET_MS = 11_000
 

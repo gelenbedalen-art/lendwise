@@ -96,6 +96,23 @@ describe('readChainBalances', () => {
     expect(c.multicall).not.toHaveBeenCalled()
   })
 
+  it('says why the chain failed, without the RPC key', async () => {
+    const fail = {
+      status: 'failure',
+      error: new Error(
+        'HTTP request failed.\n\nStatus: 429\nURL: https://celo-mainnet.infura.io/v3/abcdef123456'
+      ),
+    }
+    const c = client({ multicall: vi.fn(async () => [fail, fail]) })
+    const err = await readChainBalances(c, {
+      owners: [A],
+      tokens: [T1],
+      multicall3: MC,
+    }).catch((e: Error) => e)
+    expect(String(err)).toMatch(/Status: 429/)
+    expect(String(err)).not.toContain('abcdef123456')
+  })
+
   it('fails the chain when every multicall call failed', async () => {
     const fail = { status: 'failure', error: new Error('rpc down') }
     const c = client({ multicall: vi.fn(async () => [fail, fail, fail]) })
