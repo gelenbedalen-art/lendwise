@@ -43,4 +43,26 @@ describe('redactRpcSecrets', () => {
       'plain message'
     )
   })
+
+  it('masks untrimmed env values by their trimmed form too', () => {
+    const basic = Buffer.from(':serversecret').toString('base64')
+    const text = redactRpcSecrets(
+      new Error(`k serverkey s serversecret h ${basic}`),
+      ['serverkey\n', ' serversecret ']
+    )
+    expect(text).not.toMatch(/serverkey|serversecret/)
+    expect(text).not.toContain(basic)
+  })
+
+  it('masks the longest value first so no fragment of it remains', () => {
+    const text = redactRpcSecrets('x abcd1234xyz y', [
+      'abcd1234',
+      'abcd1234xyz',
+    ])
+    expect(text).not.toMatch(/xyz|abcd/)
+  })
+
+  it('skips values shorter than 4 characters', () => {
+    expect(redactRpcSecrets('a banana', ['a'])).toBe('a banana')
+  })
 })
