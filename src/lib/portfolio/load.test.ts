@@ -66,6 +66,7 @@ describe('loadPortfolio', () => {
   })
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllEnvs()
   })
 
   const held = (network: string, code: string): WalletHolding => ({
@@ -480,6 +481,5 @@ describe('loadPortfolio', () => {
     expect(logged).not.toContain('serverkey123')
     expect(logged).not.toContain('serversecret')
     expect(logged).not.toContain(basic)
-    vi.unstubAllEnvs()
   })
 })

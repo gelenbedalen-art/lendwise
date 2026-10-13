@@ -23,6 +23,7 @@ describe('holdingsChains', () => {
   })
   afterEach(() => {
     vi.unstubAllEnvs()
+    vi.doUnmock('@/config/rpc.server')
   })
 
   it('builds the 16 tx chains', async () => {
@@ -95,7 +96,6 @@ describe('holdingsChains', () => {
     await expect(monad?.client.getBalance({ address: '0x0' })).rejects.toThrow(
       'no server RPC for monad'
     )
-    vi.doUnmock('@/config/rpc.server')
   })
 })
 

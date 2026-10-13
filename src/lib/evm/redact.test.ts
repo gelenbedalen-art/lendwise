@@ -1,8 +1,12 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { redactRpcSecrets } from './redact'
 
 describe('redactRpcSecrets', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   it('hides the Infura key of an error message', () => {
     const out = redactRpcSecrets(
       new Error(
@@ -72,6 +76,5 @@ describe('redactRpcSecrets', () => {
       new Error('failed https://monad.example.org/abc12345key')
     )
     expect(text).not.toContain('abc12345key')
-    vi.unstubAllEnvs()
   })
 })
