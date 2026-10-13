@@ -31,6 +31,30 @@ describe('resolveServerRpc', () => {
     ).toEqual({ url: 'https://soroban.example.org', headers: {} })
   })
 
+  it('authenticates an override with its own secret, never the provider one', () => {
+    expect(
+      resolveServerRpc('stellar', {
+        ...base,
+        RPC_URL_STELLAR: 'https://stellar-mainnet.infura.io/v3/otherkey',
+        RPC_URL_STELLAR_SECRET: 'othersecret',
+      })
+    ).toEqual({
+      url: 'https://stellar-mainnet.infura.io/v3/otherkey',
+      headers: {
+        Authorization: `Basic ${Buffer.from(':othersecret').toString('base64')}`,
+      },
+    })
+  })
+
+  it('builds dRPC URLs with the server key and no header', () => {
+    expect(
+      resolveServerRpc('celo', {
+        NEXT_PUBLIC_RPC_PROVIDER: 'drpc',
+        RPC_API_KEY: 'drpckey',
+      })
+    ).toEqual({ url: 'https://lb.drpc.live/celo/drpckey', headers: {} })
+  })
+
   it('names the missing variable', () => {
     expect(() =>
       resolveServerRpc('linea', {

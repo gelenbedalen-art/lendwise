@@ -28,6 +28,26 @@ describe('rpcUrl', () => {
     }
   })
 
+  it('builds dRPC URLs, HyperEVM under its dRPC name', () => {
+    expect(rpcUrl('drpc', 'ethereum', 'k1')).toBe(
+      'https://lb.drpc.live/ethereum/k1'
+    )
+    expect(rpcUrl('drpc', 'hyperevm', 'k1')).toBe(
+      'https://lb.drpc.live/hyperliquid/k1'
+    )
+    expect(rpcUrl('drpc', 'stellar', 'k1')).toBe(
+      'https://lb.drpc.live/stellar/k1'
+    )
+  })
+
+  it('serves every network on dRPC', () => {
+    for (const n of RPC_NETWORKS) {
+      expect(rpcUrl('drpc', n, 'k')).toMatch(
+        /^https:\/\/lb\.drpc\.live\/[a-z]+\/k$/
+      )
+    }
+  })
+
   it('refuses an empty key instead of building a broken URL', () => {
     expect(() => rpcUrl('infura', 'base', '')).toThrow(/key/)
   })
@@ -38,6 +58,7 @@ describe('guards', () => {
     expect(isRpcNetwork('linea')).toBe(true)
     expect(isRpcNetwork('gnosis')).toBe(false)
     expect(isRpcProvider('infura')).toBe(true)
+    expect(isRpcProvider('drpc')).toBe(true)
     expect(isRpcProvider('alchemy')).toBe(false)
     expect(isRpcProvider(undefined)).toBe(false)
     expect(isRpcProvider('toString')).toBe(false)
