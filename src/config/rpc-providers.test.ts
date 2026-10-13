@@ -40,5 +40,6 @@ describe('guards', () => {
     expect(isRpcProvider('infura')).toBe(true)
     expect(isRpcProvider('alchemy')).toBe(false)
     expect(isRpcProvider(undefined)).toBe(false)
+    expect(isRpcProvider('toString')).toBe(false)
   })
 })

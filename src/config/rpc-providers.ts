@@ -68,7 +68,7 @@ export function isRpcNetwork(value: string): value is RpcNetwork {
 }
 
 export function isRpcProvider(value: string | undefined): value is RpcProvider {
-  return value !== undefined && value in PROVIDERS
+  return value !== undefined && Object.hasOwn(PROVIDERS, value)
 }
 
 /** The provider's URL for a network, or null when it does not serve it. */
