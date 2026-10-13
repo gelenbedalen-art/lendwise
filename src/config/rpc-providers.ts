@@ -27,7 +27,7 @@ export const RPC_NETWORKS = [
 ] as const
 export type RpcNetwork = (typeof RPC_NETWORKS)[number]
 
-export const RPC_PROVIDERS = ['infura'] as const
+export const RPC_PROVIDERS = ['infura', 'drpc'] as const
 export type RpcProvider = (typeof RPC_PROVIDERS)[number]
 
 interface ProviderTable {
@@ -58,6 +58,29 @@ const PROVIDERS: Record<RpcProvider, ProviderTable> = {
       stellar: 'stellar-mainnet',
     },
     url: (network, key) => `https://${network}.infura.io/v3/${key}`,
+  },
+  // Network names checked live against lb.drpc.live on 2026-10-14.
+  drpc: {
+    networks: {
+      ethereum: 'ethereum',
+      arbitrum: 'arbitrum',
+      optimism: 'optimism',
+      polygon: 'polygon',
+      base: 'base',
+      linea: 'linea',
+      avalanche: 'avalanche',
+      bsc: 'bsc',
+      celo: 'celo',
+      zksync: 'zksync',
+      mantle: 'mantle',
+      scroll: 'scroll',
+      unichain: 'unichain',
+      hyperevm: 'hyperliquid',
+      megaeth: 'megaeth',
+      monad: 'monad',
+      stellar: 'stellar',
+    },
+    url: (network, key) => `https://lb.drpc.live/${network}/${key}`,
   },
 }
 
