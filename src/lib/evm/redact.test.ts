@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { redactRpcSecrets } from './redact'
 
@@ -64,5 +64,14 @@ describe('redactRpcSecrets', () => {
 
   it('skips values shorter than 4 characters', () => {
     expect(redactRpcSecrets('a banana', ['a'])).toBe('a banana')
+  })
+
+  it('masks the RPC_URL_ override URLs of the environment', () => {
+    vi.stubEnv('RPC_URL_MONAD', 'https://monad.example.org/abc12345key')
+    const text = redactRpcSecrets(
+      new Error('failed https://monad.example.org/abc12345key')
+    )
+    expect(text).not.toContain('abc12345key')
+    vi.unstubAllEnvs()
   })
 })

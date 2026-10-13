@@ -76,4 +76,48 @@ describe('holdingsChains', () => {
         (c.client as unknown as { transport: { type: string } }).transport.type
       ).toBe('http')
   })
+
+  it('fails only the unserved chain, not all of them', async () => {
+    vi.stubEnv('NEXT_PUBLIC_RPC_PROVIDER', 'infura')
+    vi.stubEnv('NEXT_PUBLIC_RPC_API_KEY', 'browser-key')
+    vi.stubEnv('RPC_API_KEY', 'server-key')
+    vi.doMock('@/config/rpc.server', () => ({
+      serverRpc: (slug: string) =>
+        slug === 'monad'
+          ? null
+          : { url: `https://x.example/${slug}`, headers: {} },
+    }))
+    vi.resetModules()
+    const { holdingsChains } = await import('./holdings-chains')
+    const chains = holdingsChains()
+    expect(chains).toHaveLength(16)
+    const monad = chains.find((c) => c.slug === 'monad')
+    await expect(monad?.client.getBalance({ address: '0x0' })).rejects.toThrow(
+      'no server RPC for monad'
+    )
+    vi.doUnmock('@/config/rpc.server')
+  })
+})
+
+describe('unavailableClient', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('rejects every method with the reason', async () => {
+    vi.stubEnv('NEXT_PUBLIC_RPC_PROVIDER', 'infura')
+    vi.stubEnv('NEXT_PUBLIC_RPC_API_KEY', 'browser-key')
+    vi.resetModules()
+    const { unavailableClient } = await import('./holdings-chains')
+    const client = unavailableClient('no server RPC for monad')
+    await expect(client.getBalance({} as never)).rejects.toThrow(
+      'no server RPC for monad'
+    )
+    await expect(client.multicall({} as never)).rejects.toThrow(
+      'no server RPC for monad'
+    )
+    await expect(client.readContract({} as never)).rejects.toThrow(
+      'no server RPC for monad'
+    )
+  })
 })

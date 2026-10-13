@@ -66,13 +66,16 @@ function browserRpc(network: RpcNetwork): string {
 const MULTICALL3 = '0xcA11bde05977b3631167028862bE2a173976CA11'
 
 // Not in our viem version yet — minimal definitions, explorers can come later.
+// `rpcUrls.default` is what wallets receive when the app adds a chain, so it
+// is never a keyed URL: the wallet would call it from its own origin, which is
+// not in the browser key's allowlist. wagmi reads go through `rpc` instead.
 // multicall3 (canonical address) was checked on-chain on 2026-10-13, so
 // `blockCreated` is left out.
 const hyperevm = defineChain({
   id: 999,
   name: 'HyperEVM',
   nativeCurrency: { name: 'Hyperliquid', symbol: 'HYPE', decimals: 18 },
-  rpcUrls: { default: { http: [browserRpc('hyperevm')] } },
+  rpcUrls: { default: { http: ['https://rpc.hyperliquid.xyz/evm'] } },
   contracts: { multicall3: { address: MULTICALL3 } },
 })
 
@@ -80,7 +83,7 @@ const megaeth = defineChain({
   id: 4326,
   name: 'MegaETH',
   nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: { default: { http: [browserRpc('megaeth')] } },
+  rpcUrls: { default: { http: ['https://mainnet.megaeth.com/rpc'] } },
   contracts: { multicall3: { address: MULTICALL3 } },
 })
 
@@ -88,7 +91,7 @@ const monad = defineChain({
   id: 143,
   name: 'Monad',
   nativeCurrency: { name: 'Monad', symbol: 'MON', decimals: 18 },
-  rpcUrls: { default: { http: [browserRpc('monad')] } },
+  rpcUrls: { default: { http: ['https://rpc.monad.xyz'] } },
   contracts: { multicall3: { address: MULTICALL3 } },
 })
 

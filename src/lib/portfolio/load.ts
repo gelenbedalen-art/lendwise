@@ -1,5 +1,7 @@
+import { inspect } from 'node:util'
 import type { Address } from 'viem'
 
+import { redactRpcSecrets } from '@/lib/evm/redact'
 import type { RiskAccount, RiskAccountResult } from '@/lib/risk/types'
 import type { BorrowPosition, SupplyPosition, UserPosition } from '@/types'
 
@@ -59,16 +61,24 @@ const emptyFamily = (): FamilyResult => ({
 
 const GENERIC_FAILURE_MESSAGE = 'Temporarily unavailable'
 
+/** Log-safe text of a failure: an HTTP error object carries the request's URL and headers. */
+const loggable = (reason: unknown) =>
+  redactRpcSecrets(inspect(reason, { depth: 3 }))
+
 /**
- * Upstream errors can carry RPC URLs with keys or internal hosts: the raw
- * reason stays in the server logs, the client only gets a generic message.
+ * Upstream errors can carry RPC URLs with keys or internal hosts: the
+ * redacted reason goes to the server logs, the client only gets a generic
+ * message.
  */
 function failure(
   chainFamily: PortfolioChainFamily,
   source: string,
   reason: unknown
 ): PortfolioPartialFailure {
-  console.error(`[portfolio] ${chainFamily}/${source} failed:`, reason)
+  console.error(
+    `[portfolio] ${chainFamily}/${source} failed:`,
+    loggable(reason)
+  )
   return { chainFamily, source, message: GENERIC_FAILURE_MESSAGE }
 }
 
@@ -233,7 +243,7 @@ export async function loadPortfolio(
     try {
       riskAccounts = await deps.computeRisk(accounts)
     } catch (reason) {
-      console.error('[portfolio] risk computation failed:', reason)
+      console.error('[portfolio] risk computation failed:', loggable(reason))
     }
   }
   return {

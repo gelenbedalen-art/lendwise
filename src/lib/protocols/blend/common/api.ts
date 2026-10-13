@@ -16,6 +16,7 @@ import {
 import { Address, Networks, rpc as stellarRpc } from '@stellar/stellar-sdk'
 
 import { type ServerRpc, serverRpc } from '@/config/rpc.server'
+import { redactRpcSecrets } from '@/lib/evm/redact'
 
 import type { BlendDeployment } from './deployments'
 import type { TokenMetadata } from './types'
@@ -35,7 +36,7 @@ export function blendNetworkFrom(rpc: ServerRpc | null): Network {
 let network: Network | undefined
 
 /** Built on first use, not at import: the server RPC config is read at call time. */
-function blendNetwork(): Network {
+export function blendNetwork(): Network {
   network ??= blendNetworkFrom(serverRpc('stellar'))
   return network
 }
@@ -110,6 +111,24 @@ export function isRpcRefusal(err: unknown): boolean {
   )
 }
 
+/**
+ * The same failure without the request it came from: an SDK HTTP error
+ * carries the RPC URL (server key) and the Authorization header (secret).
+ * Keeps the message (redacted) and `response.status`, which `isRpcRefusal`
+ * reads.
+ */
+export function sanitizeRpcError(err: unknown): Error {
+  const status = (err as { response?: { status?: number } } | null)?.response
+    ?.status
+  const clean = Object.assign(
+    new Error(redactRpcSecrets(err)),
+    status === undefined ? {} : { response: { status } }
+  )
+  const name = (err as { name?: unknown } | null)?.name
+  if (typeof name === 'string') clean.name = name
+  return clean
+}
+
 let rpcQueue: Promise<unknown> = Promise.resolve()
 let lastCallAt = 0
 
@@ -130,7 +149,11 @@ function pacedRpc<T>(fn: () => Promise<T>): Promise<T> {
     const wait = lastCallAt + RPC_MIN_INTERVAL_MS - Date.now()
     if (wait > 0) await sleep(wait)
     lastCallAt = Date.now()
-    return fn()
+    try {
+      return await fn()
+    } catch (err) {
+      throw sanitizeRpcError(err)
+    }
   }
   // Chained on both settle paths so one rejection cannot stall the queue.
   const result = rpcQueue.then(run, run)

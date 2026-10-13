@@ -1,5 +1,8 @@
 {
   "extends": "./tsconfig.json",
+  // A child `paths` replaces the parent's, so `@/*` is repeated here and must
+  // follow tsconfig.json when aliases change. `server-only` maps to the stub
+  // because the real package throws outside React Server Components.
   "compilerOptions": {
     "paths": {
       "@/*": ["./src/*"],

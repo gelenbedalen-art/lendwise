@@ -9,6 +9,16 @@ import type { BalanceClient } from './balance-reader'
 import { EVM_RPC_TIMEOUT_MS, type HoldingsChain } from './wallet-holdings'
 import { NATIVE_PRICE_TOKEN } from './wrapped-native'
 
+/** A client for a chain with no server RPC: every read rejects with `reason`. */
+export function unavailableClient(reason: string): BalanceClient {
+  const reject = () => Promise.reject(new Error(reason))
+  return {
+    getBalance: reject,
+    multicall: reject,
+    readContract: reject,
+  } as unknown as BalanceClient
+}
+
 let chains: HoldingsChain[] | undefined
 
 /**
@@ -23,13 +33,15 @@ let chains: HoldingsChain[] | undefined
 export function holdingsChains(): HoldingsChain[] {
   chains ??= TX_CHAINS.map((chain) => {
     const slug = chainSlugFor(chain.id)
-    if (!slug || !isRpcNetwork(slug))
-      throw new Error(`chain ${chain.id} has no RPC network`)
-    const rpc = serverRpc(slug)
-    if (!rpc) throw new Error(`no server RPC for ${slug}`)
+    // A chain the provider does not serve is a gap of that chain alone: its
+    // reads reject and it lands in `failedNetworks`. Missing provider config
+    // (`serverRpc` throwing) stays a deployment error and throws for all.
+    const network = slug && isRpcNetwork(slug) ? slug : undefined
+    const rpc = network ? serverRpc(network) : null
+    const label = slug ?? String(chain.id)
     return {
       id: chain.id,
-      slug,
+      slug: label,
       nativeSymbol: chain.nativeCurrency.symbol,
       nativeDecimals: chain.nativeCurrency.decimals,
       multicall3:
@@ -37,13 +49,15 @@ export function holdingsChains(): HoldingsChain[] {
           ? chain.contracts?.multicall3?.address
           : undefined) ?? null,
       nativePriceToken: NATIVE_PRICE_TOKEN[chain.id],
-      client: createPublicClient({
-        chain,
-        transport: http(rpc.url, {
-          timeout: EVM_RPC_TIMEOUT_MS,
-          fetchOptions: { headers: rpc.headers },
-        }),
-      }) as unknown as BalanceClient,
+      client: rpc
+        ? (createPublicClient({
+            chain,
+            transport: http(rpc.url, {
+              timeout: EVM_RPC_TIMEOUT_MS,
+              fetchOptions: { headers: rpc.headers },
+            }),
+          }) as unknown as BalanceClient)
+        : unavailableClient(`no server RPC for ${label}`),
     }
   })
   return chains

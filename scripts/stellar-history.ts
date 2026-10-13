@@ -17,9 +17,8 @@
  * Default output: docs/data/stellar-history/<protocol>-<contract>-<interval>-<from>_<to>.csv
  *
  * Env: GCP_PROJECT + GCP_SERVICE_ACCOUNT_BASE64 (BigQuery). The Soroban read
- * (`getProducts`) uses the server RPC config (NEXT_PUBLIC_RPC_PROVIDER +
- * RPC_API_KEY [+ RPC_API_KEY_SECRET], or RPC_URL_STELLAR) and falls back to
- * the public RPC without Stellar configuration.
+ * (`getProducts`) needs the server RPC config (NEXT_PUBLIC_RPC_PROVIDER +
+ * RPC_API_KEY [+ RPC_API_KEY_SECRET]) or RPC_URL_STELLAR.
  * HUBBLE_MAX_BYTES_BILLED caps the spend (default 20 GB).
  */
 import { mkdirSync, writeFileSync } from 'fs'

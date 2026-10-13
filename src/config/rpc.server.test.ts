@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { resolveServerRpc, rpcOverrideVar } from './rpc.server'
 
@@ -56,5 +56,24 @@ describe('resolveServerRpc', () => {
 describe('rpcOverrideVar', () => {
   it('upper-cases the slug', () => {
     expect(rpcOverrideVar('hyperevm')).toBe('RPC_URL_HYPEREVM')
+  })
+})
+
+describe('importing the module', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('does not throw with every RPC env var unset', async () => {
+    vi.resetModules()
+    for (const name of [
+      'NEXT_PUBLIC_RPC_PROVIDER',
+      'NEXT_PUBLIC_RPC_API_KEY',
+      'RPC_API_KEY',
+      'RPC_API_KEY_SECRET',
+    ]) {
+      vi.stubEnv(name, '')
+    }
+    await expect(import('./rpc.server')).resolves.toBeDefined()
   })
 })
