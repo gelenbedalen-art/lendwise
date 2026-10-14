@@ -1,7 +1,7 @@
 import { createPublicClient, http } from 'viem'
 
 import { TX_CHAINS } from '@/config/chains'
-import { isRpcNetwork } from '@/config/rpc-providers'
+import { type RpcNetwork, isRpcNetwork } from '@/config/rpc-providers'
 import { serverRpc } from '@/config/rpc.server'
 import { chainSlugFor } from '@/lib/protocols/core/toolkit'
 
@@ -23,11 +23,31 @@ export function unavailableClient(reason: string): BalanceClient {
   } as unknown as BalanceClient
 }
 
+/**
+ * A fetch that adds the network's current auth headers to every request: a
+ * dRPC JWT expires after an hour, the clients live as long as the instance.
+ */
+export function freshHeadersFetch(
+  network: RpcNetwork,
+  fetchImpl: typeof fetch = fetch
+): typeof fetch {
+  return (input, init) => {
+    const headers = new Headers(init?.headers)
+    for (const [name, value] of Object.entries(
+      serverRpc(network)?.headers ?? {}
+    )) {
+      headers.set(name, value)
+    }
+    return fetchImpl(input, { ...init, headers })
+  }
+}
+
 let chains: HoldingsChain[] | undefined
 
 /**
  * Every tx chain with a viem client on the RPC provider's server key, built
- * once per server instance. The key's secret travels as Basic auth. No
+ * once per server instance. Each request carries the provider's current proof
+ * (Infura's Basic secret, dRPC's JWT) through `freshHeadersFetch`. No
  * JSON-RPC batching: a rate-limited batch comes back as one id-less error
  * that viem cannot match, so nothing is retried. Plain requests keep viem's
  * retries on -32005 and 429, and every chain has multicall3, so a chain costs
@@ -53,16 +73,17 @@ export function holdingsChains(): HoldingsChain[] {
           ? chain.contracts?.multicall3?.address
           : undefined) ?? null,
       nativePriceToken: NATIVE_PRICE_TOKEN[chain.id],
-      client: rpc
-        ? (createPublicClient({
-            chain,
-            transport: http(rpc.url, {
-              timeout: EVM_RPC_TIMEOUT_MS,
-              retryDelay: EVM_RPC_RETRY_DELAY_MS,
-              fetchOptions: { headers: rpc.headers },
-            }),
-          }) as unknown as BalanceClient)
-        : unavailableClient(`no server RPC for ${label}`),
+      client:
+        rpc && network
+          ? (createPublicClient({
+              chain,
+              transport: http(rpc.url, {
+                timeout: EVM_RPC_TIMEOUT_MS,
+                retryDelay: EVM_RPC_RETRY_DELAY_MS,
+                fetchFn: freshHeadersFetch(network),
+              }),
+            }) as unknown as BalanceClient)
+          : unavailableClient(`no server RPC for ${label}`),
     }
   })
   return chains

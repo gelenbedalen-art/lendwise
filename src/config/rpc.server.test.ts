@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { resolveServerRpc, rpcOverrideVar } from './rpc.server'
@@ -15,6 +16,45 @@ describe('resolveServerRpc', () => {
       url: 'https://linea-mainnet.infura.io/v3/serverkey',
       headers: { Authorization: basic },
     })
+  })
+
+  it('never sends the Infura secret to dRPC', () => {
+    expect(
+      resolveServerRpc('celo', {
+        NEXT_PUBLIC_RPC_PROVIDER: 'drpc',
+        RPC_API_KEY: 'drpckey',
+        RPC_API_KEY_SECRET: 'serversecret',
+      })?.headers
+    ).toEqual({})
+  })
+
+  it('signs a dRPC JWT naming the uploaded key', () => {
+    const privateKeyPem = generateKeyPairSync('ec', {
+      namedCurve: 'prime256v1',
+    })
+      .privateKey.export({ type: 'pkcs8', format: 'pem' })
+      .toString()
+    const rpc = resolveServerRpc('celo', {
+      NEXT_PUBLIC_RPC_PROVIDER: 'drpc',
+      RPC_API_KEY: 'drpckey',
+      RPC_JWT_PRIVATE_KEY: privateKeyPem,
+      RPC_JWT_KEY_ID: 'FINGERPRINT',
+    })
+    const token = rpc?.headers.Authorization ?? ''
+    expect(token.split('.')).toHaveLength(3)
+    expect(
+      JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString()).kid
+    ).toBe('FINGERPRINT')
+  })
+
+  it('asks for both JWT variables together', () => {
+    expect(() =>
+      resolveServerRpc('celo', {
+        NEXT_PUBLIC_RPC_PROVIDER: 'drpc',
+        RPC_API_KEY: 'drpckey',
+        RPC_JWT_KEY_ID: 'FINGERPRINT',
+      })
+    ).toThrow(/RPC_JWT_PRIVATE_KEY and RPC_JWT_KEY_ID/)
   })
 
   it('sends no header without a secret', () => {

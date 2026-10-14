@@ -1,11 +1,17 @@
 import 'server-only'
 
-import { type RpcNetwork, isRpcProvider, rpcUrl } from './rpc-providers'
+import { cachedRpcJwt } from './rpc-jwt'
+import {
+  type RpcNetwork,
+  type RpcProvider,
+  isRpcProvider,
+  rpcUrl,
+} from './rpc-providers'
 
 /** Where the server reaches one network, and how it authenticates there. */
 export interface ServerRpc {
   url: string
-  /** The key's secret as Basic auth; empty when no secret is configured. */
+  /** How the key proves itself: Infura's Basic secret, dRPC's JWT, or nothing. */
   headers: Record<string, string>
 }
 
@@ -24,11 +30,44 @@ function basicAuth(secret: string | undefined): Record<string, string> {
     : {}
 }
 
+const rpcJwt = cachedRpcJwt()
+
+/**
+ * The JWT dRPC checks when "JSON web token" is on for the server key, signed
+ * with `RPC_JWT_PRIVATE_KEY` and naming the uploaded public key by
+ * `RPC_JWT_KEY_ID`. Without either variable, no token: the key works alone.
+ */
+function drpcJwtAuth(
+  env: Record<string, string | undefined>
+): Record<string, string> {
+  const privateKeyPem = env.RPC_JWT_PRIVATE_KEY?.trim()
+  const keyId = env.RPC_JWT_KEY_ID?.trim()
+  if (!privateKeyPem && !keyId) return {}
+  if (!privateKeyPem || !keyId) {
+    throw new Error('RPC_JWT_PRIVATE_KEY and RPC_JWT_KEY_ID go together')
+  }
+  return { Authorization: rpcJwt({ privateKeyPem, keyId }) }
+}
+
+/** Each provider's own proof for the server key; never another provider's. */
+function providerAuth(
+  provider: RpcProvider,
+  env: Record<string, string | undefined>
+): Record<string, string> {
+  switch (provider) {
+    case 'infura':
+      return basicAuth(env.RPC_API_KEY_SECRET?.trim())
+    case 'drpc':
+      return drpcJwtAuth(env)
+  }
+}
+
 /**
  * Server RPC of a network. An override URL wins, authenticated only by its
  * own `RPC_URL_<SLUG>_SECRET` — the provider's secret never goes to another
- * host. Otherwise the provider URL with the server key, and the key's secret
- * as Basic auth when set. Null when the provider does not serve the network.
+ * host. Otherwise the provider URL with the server key and that provider's
+ * own proof (Infura: the key's secret as Basic auth; dRPC: a signed JWT).
+ * Null when the provider does not serve the network.
  */
 export function resolveServerRpc(
   network: RpcNetwork,
@@ -54,7 +93,7 @@ export function resolveServerRpc(
 
   const url = rpcUrl(provider, network, key)
   if (url === null) return null
-  return { url, headers: basicAuth(env.RPC_API_KEY_SECRET?.trim()) }
+  return { url, headers: providerAuth(provider, env) }
 }
 
 /** `resolveServerRpc` on the process env, read at call time, never at import. */

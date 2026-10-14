@@ -33,12 +33,12 @@ export function blendNetworkFrom(rpc: ServerRpc | null): Network {
   }
 }
 
-let network: Network | undefined
-
-/** Built on first use, not at import: the server RPC config is read at call time. */
+/**
+ * Built per call, never at import: the server RPC config is read at call time
+ * and its auth header (a dRPC JWT, valid an hour) must stay current.
+ */
 export function blendNetwork(): Network {
-  network ??= blendNetworkFrom(serverRpc('stellar'))
-  return network
+  return blendNetworkFrom(serverRpc('stellar'))
 }
 
 /**
