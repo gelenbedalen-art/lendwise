@@ -1,5 +1,6 @@
 // src/config/protocols-server.ts — server only: loaders dynamic-import heavy adapter modules
 import type { ProtocolName } from '@/config/protocols-meta'
+import { stellarNetworkId } from '@/config/stellar-network'
 import type {
   AppAdapter,
   StellarPositionsAdapter,
@@ -34,6 +35,9 @@ export const APP_ADAPTERS: Partial<
 export function stellarPositionAdapters(
   env: Record<string, string | undefined> = process.env
 ): Record<string, () => Promise<StellarPositionsAdapter>> {
+  // Blend v2.1 pools and the fixture are pubnet: a testnet deployment reads
+  // only the wallet's own holdings.
+  if (stellarNetworkId(env) === 'testnet') return {}
   const adapters: Record<string, () => Promise<StellarPositionsAdapter>> = {
     'blend_v2.1': () =>
       import('@/lib/protocols/blend/v2_1/positions').then(

@@ -2,12 +2,14 @@ import {
   Account,
   Horizon,
   Keypair,
-  Networks,
   Operation,
   Transaction,
   TransactionBuilder,
 } from '@stellar/stellar-sdk'
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto'
+
+import { stellarNetwork } from '@/config/stellar-network'
+import { stellarHorizonUrl } from '@/config/stellar-network.server'
 
 import { isProduction } from './redis'
 import {
@@ -64,13 +66,15 @@ function signingKeypair(): Keypair {
   return Keypair.fromSecret(secret)
 }
 
-// LendWise reads and authenticates on Stellar mainnet only — the same network
-// the Blend adapters are pinned to (blend/common/api.ts). The client signs for
-// the same SDK constant, so the two cannot drift apart through configuration.
-const NETWORK_PASSPHRASE = Networks.PUBLIC
+// The deployment's Stellar network (config/stellar-network.ts): mainnet
+// everywhere but the testnet staging, and always in production. The client
+// checks the same function, so the two cannot drift apart.
+function networkPassphrase(): string {
+  return stellarNetwork().passphrase
+}
 
 function horizonUrl(): string {
-  return process.env.STELLAR_HORIZON_URL || 'https://horizon.stellar.org'
+  return stellarHorizonUrl()
 }
 
 function assertPublicKey(address: string): void {
@@ -146,14 +150,14 @@ export async function issueStellarChallenge({
   assertPublicKey(address)
   assertDomain(domain)
   const server = signingKeypair()
-  const networkPassphrase = NETWORK_PASSPHRASE
+  const passphrase = networkPassphrase()
   const now = Math.floor(Date.now() / 1000)
   const timeout = now + CHALLENGE_TIMEOUT_SECONDS
   const nonce = randomBytes(48).toString('base64url')
 
   const tx = new TransactionBuilder(new Account(server.publicKey(), '-1'), {
     fee: '100',
-    networkPassphrase,
+    networkPassphrase: passphrase,
     timebounds: { minTime: now, maxTime: timeout },
   })
     .addOperation(
@@ -178,7 +182,7 @@ export async function issueStellarChallenge({
   const transactionXdr = tx.toXDR()
   return {
     address,
-    networkPassphrase,
+    networkPassphrase: passphrase,
     transactionXdr,
     transaction: transactionXdr,
     expiresAt: new Date(timeout * 1000).toISOString(),
@@ -336,7 +340,7 @@ export function verifySessionToken(
     if (typeof payload.address !== 'string') return null
     // A session issued on another network (testnet cookie on mainnet) is not
     // a session here.
-    if (payload.networkPassphrase !== NETWORK_PASSPHRASE) return null
+    if (payload.networkPassphrase !== networkPassphrase()) return null
     if (typeof payload.issuedAt !== 'number') return null
     if (typeof payload.expiresAt !== 'number') return null
     if (payload.expiresAt <= Math.floor(Date.now() / 1000)) return null
@@ -358,8 +362,8 @@ export async function verifyStellarChallenge({
   assertPublicKey(address)
   assertDomain(domain)
   const server = signingKeypair()
-  const networkPassphrase = NETWORK_PASSPHRASE
-  const tx = new Transaction(transactionXdr, networkPassphrase)
+  const passphrase = networkPassphrase()
+  const tx = new Transaction(transactionXdr, passphrase)
 
   if (tx.source !== server.publicKey()) {
     throw new Error('Challenge source account does not match server signer')
@@ -431,7 +435,7 @@ export async function verifyStellarChallenge({
   const session: StellarSessionPayload = {
     sid: randomBytes(18).toString('base64url'),
     address,
-    networkPassphrase,
+    networkPassphrase: passphrase,
     issuedAt,
     expiresAt: issuedAt + SESSION_TTL_SECONDS,
   }

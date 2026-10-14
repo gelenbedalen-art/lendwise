@@ -14,6 +14,7 @@ import { useStellarWallet } from '@/contexts/StellarWalletContext'
 import { cn } from '@/lib/utils'
 import { useWalletStore } from '@/stores/walletStore'
 
+import { StellarNetworkBadge } from './StellarNetworkBadge'
 import { Logo } from './logo'
 import { UserMenu } from './user/UserMenu'
 
@@ -39,7 +40,10 @@ export function Navbar() {
   return (
     <header className="border-border bg-card sticky top-0 z-50 w-full border-b">
       <div className="flex h-14 items-center justify-between px-4 md:justify-start md:gap-8 md:px-6">
-        <Logo />
+        <div className="flex items-center gap-2">
+          <Logo />
+          <StellarNetworkBadge />
+        </div>
 
         {/* Nav links — desktop */}
         <nav className="hidden items-center gap-1 md:flex">
