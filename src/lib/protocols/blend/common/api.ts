@@ -248,8 +248,7 @@ export async function getFactoryDeployedPools(
 
   // Oldest ledger the RPC still serves events for; +1 keeps us strictly inside
   // the range `getEvents` accepts.
-  const { oldestLedger } = await pacedRpc(() => server.getHealth())
-  const startLedger = oldestLedger + 1
+  const startLedger = (await oldestEventLedger(server)) + 1
 
   const PAGE_LIMIT = 200
   const MAX_PAGES = 30
@@ -290,6 +289,29 @@ export async function getFactoryDeployedPools(
   }
 
   return deployedPoolsFromEvents(events)
+}
+
+/** Soroban RPC's standard event retention: 7 days of ~5 s ledgers. */
+export const EVENT_RETENTION_LEDGERS = 120_960
+
+/** Ledgers kept clear of the retention edge, which moves while we page. */
+const RETENTION_MARGIN_LEDGERS = 100
+
+/**
+ * The oldest ledger `getEvents` still serves. `getHealth` says so directly,
+ * but some providers (dRPC) do not expose it: the start of the standard
+ * retention window, behind the latest ledger, stands in.
+ */
+export async function oldestEventLedger(
+  server: Pick<stellarRpc.Server, 'getHealth' | 'getLatestLedger'>
+): Promise<number> {
+  try {
+    const { oldestLedger } = await pacedRpc(() => server.getHealth())
+    return oldestLedger
+  } catch {
+    const { sequence } = await pacedRpc(() => server.getLatestLedger())
+    return sequence - EVENT_RETENTION_LEDGERS + RETENTION_MARGIN_LEDGERS
+  }
 }
 
 /**
