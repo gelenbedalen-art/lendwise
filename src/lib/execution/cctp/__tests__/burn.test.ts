@@ -51,19 +51,26 @@ describe('planBurn', () => {
     })
   })
 
-  it('never routes to the user’s address or to the other network’s forwarder', () => {
-    const plan = planBurn({
-      sourceChain: base,
-      amount: 25_000_000n,
-      fee,
-      stellarRecipient: G,
-      contracts,
-    })
-    const testnetForwarder = contractIdToBytes32(
-      cctpConfig('testnet').stellar.forwarder
-    )
-    expect(plan.forwarder32).not.toBe(testnetForwarder)
-    expect(plan.data.toLowerCase()).not.toContain(testnetForwarder.slice(2))
+  it('refuses a source chain paired with the other network’s contracts', () => {
+    const testnetBase = cctpSourceChain(84532, 'testnet')!
+    expect(() =>
+      planBurn({
+        sourceChain: base,
+        amount: 25_000_000n,
+        fee,
+        stellarRecipient: G,
+        contracts: cctpConfig('testnet').stellar,
+      })
+    ).toThrow(/same network/)
+    expect(() =>
+      planBurn({
+        sourceChain: testnetBase,
+        amount: 25_000_000n,
+        fee,
+        stellarRecipient: G,
+        contracts,
+      })
+    ).toThrow(/same network/)
   })
 
   it('refuses a recipient that is not a Stellar account', () => {

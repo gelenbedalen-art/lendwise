@@ -39,10 +39,16 @@ function ceilDiv(a: bigint, b: bigint): bigint {
   return (a + b - 1n) / b
 }
 
-/** amount × bps × 1.2 / 10 000, rounded up; bps in hundredths so 1.3 bps stays exact. */
+/**
+ * amount × bps × 1.2 / 10 000, rounded up. bps is scaled to 1e-6 (the round absorbs
+ * float noise), so the ceiling holds for any quote down to a millionth of a bps.
+ */
 function bufferedFee(amount: bigint, bps: number): bigint {
-  const centiBps = BigInt(Math.round(bps * 100))
-  return ceilDiv(amount * centiBps * FEE_BUFFER_PERCENT, 10_000n * 100n * 100n)
+  const microBps = BigInt(Math.round(bps * 1_000_000))
+  return ceilDiv(
+    amount * microBps * FEE_BUFFER_PERCENT,
+    10_000n * 1_000_000n * 100n
+  )
 }
 
 function usable(t: IrisFeeTier): boolean {

@@ -26,6 +26,15 @@ describe('planBridgeFee', () => {
     expect(planBridgeFee(1_000_001n, QUOTE).maxFee).toBe(157n)
   })
 
+  it('keeps the ceiling for quotes finer than 0.01 bps', () => {
+    const q = (minimumFee: number) => [{ finalityThreshold: 1000, minimumFee }]
+    expect(planBridgeFee(1_000_000_000n, q(0.004)).maxFee).toBe(480n)
+    expect(planBridgeFee(1_000_000_000n, q(0.014)).maxFee).toBe(1_680n)
+    expect(planBridgeFee(1_000_000_000n, q(1.234)).maxFee).toBe(148_080n)
+    expect(planBridgeFee(1_000_000n, q(1.005)).maxFee).toBe(121n)
+    expect(planBridgeFee(1_000_000n, q(1.4)).maxFee).toBe(168n)
+  })
+
   it('falls back to Standard when Fast costs more than the ceiling', () => {
     const plan = planBridgeFee(100_000_000n, [
       { finalityThreshold: 1000, minimumFee: 6 },

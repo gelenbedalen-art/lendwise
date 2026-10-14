@@ -3,12 +3,35 @@ import { type Hex, encodeFunctionData } from 'viem'
 
 import { tokenMessengerV2Abi } from './abis'
 import {
+  type CctpNetworkConfig,
   type CctpSourceChain,
   STELLAR_CCTP_DOMAIN,
   type StellarCctpContracts,
+  cctpConfig,
 } from './config'
 import type { BridgeFeePlan } from './fees'
 import { contractIdToBytes32, encodeForwarderHookData } from './hook'
+
+/** True when the chain and the Stellar contracts are the same network's rows of the config table. */
+function sameNetwork(
+  sourceChain: CctpSourceChain,
+  contracts: StellarCctpContracts
+): boolean {
+  return (['mainnet', 'testnet'] as const).some((n) => {
+    const cfg: CctpNetworkConfig = cctpConfig(n)
+    return (
+      cfg.sourceChains.some(
+        (c) =>
+          c.chainId === sourceChain.chainId &&
+          c.tokenMessengerV2 === sourceChain.tokenMessengerV2 &&
+          c.usdc === sourceChain.usdc
+      ) &&
+      cfg.stellar.forwarder === contracts.forwarder &&
+      cfg.stellar.tokenMessengerMinter === contracts.tokenMessengerMinter &&
+      cfg.stellar.messageTransmitter === contracts.messageTransmitter
+    )
+  })
+}
 
 export interface BurnPlan {
   chainId: number
@@ -37,6 +60,11 @@ export function planBurn(input: {
   contracts: StellarCctpContracts
 }): BurnPlan {
   const { sourceChain, amount, fee, stellarRecipient, contracts } = input
+  if (!sameNetwork(sourceChain, contracts)) {
+    throw new Error(
+      'The source chain and the Stellar contracts are not from the same network'
+    )
+  }
   if (!StrKey.isValidEd25519PublicKey(stellarRecipient)) {
     throw new Error('The recipient must be a Stellar account (G…)')
   }
