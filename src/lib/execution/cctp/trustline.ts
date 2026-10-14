@@ -46,6 +46,8 @@ export interface PreflightResult {
 type Usdc = StellarNetworkConfig['usdc']
 
 export const TRUSTLINE_RESERVE_XLM = 0.5
+/** Stellar's maximum trustline limit: what "no limit" means on the ledger. */
+export const MAX_TRUSTLINE_LIMIT = '922337203685.4775807'
 export const FEE_MARGIN_XLM = 0.1
 
 const STROOPS = 10_000_000n
@@ -169,6 +171,7 @@ export async function buildChangeTrustXdr(
     .addOperation(
       Operation.changeTrust({
         asset: new Asset(deps.usdc.code, deps.usdc.issuer),
+        limit: MAX_TRUSTLINE_LIMIT,
       })
     )
     .setTimeout(300)
@@ -206,10 +209,10 @@ export function assertSignedChangeTrust(
       'The trustline is not for this network’s USDC'
     )
   }
-  if (Number(op.limit) === 0) {
+  if (op.limit !== MAX_TRUSTLINE_LIMIT) {
     throw new SignedTxError(
       'operation',
-      'Removing the USDC trustline is not allowed here'
+      'The USDC trustline must have no limit (Stellar maximum)'
     )
   }
 }

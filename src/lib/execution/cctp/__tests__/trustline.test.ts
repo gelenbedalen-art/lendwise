@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   type HorizonAccount,
+  MAX_TRUSTLINE_LIMIT,
   SignedTxError,
   assertSignedChangeTrust,
   buildChangeTrustXdr,
@@ -181,7 +182,7 @@ describe('buildChangeTrustXdr', () => {
     if (op.type !== 'changeTrust') return
     expect((op.line as Asset).getCode()).toBe('USDC')
     expect((op.line as Asset).getIssuer()).toBe(USDC.issuer)
-    expect(op.limit).toBe('922337203685.4775807')
+    expect(op.limit).toBe(MAX_TRUSTLINE_LIMIT)
   })
 
   it('refuses to build for an account that does not exist', async () => {
@@ -275,6 +276,8 @@ describe('assertSignedChangeTrust', () => {
     expect(codeOf(signed({ ops: 2 }))).toBe('operations')
     expect(codeOf(signed({ payment: true }))).toBe('operation')
     expect(codeOf(signed({ limit: '0' }))).toBe('operation')
+    expect(codeOf(signed({ limit: '1' }))).toBe('operation')
+    expect(codeOf(signed({ limit: '0.0000001' }))).toBe('operation')
     expect(codeOf(signed({ source: Keypair.random() }))).toBe('source')
     expect(codeOf(signed({ signer: null }))).toBe('unsigned')
     expect(codeOf(signed({ signer: Keypair.random() }))).toBe('bad-signature')
