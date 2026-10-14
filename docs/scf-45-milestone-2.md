@@ -12,8 +12,8 @@ repository, on a staging environment, and on [lendwise.fi](https://lendwise.fi).
 
 **Staging:** [lendwise-mainnet.vercel.app](https://lendwise-mainnet.vercel.app)
 (custom domain of the `mainnet` branch preview). **CI:** the latest green run on `mainnet`,
-[run 38286634254](https://github.com/lendwise-fi/lendwise/actions/runs/38286634254), commit
-`a4bb6c9`.
+[run 38587107438](https://github.com/lendwise-fi/lendwise/actions/runs/38587107438), commit
+`9455c5f`.
 
 **Network.** The demonstrations run on Stellar **mainnet**, not testnet. Blend v1 and v2 have been
 frozen or on ice since the exploit, and Blend v2.1 is live on mainnet; the staging fixture
@@ -133,11 +133,27 @@ Same state, Wallet balances tab: empty.
 
 ### Staging levers
 
-Preview-only environment variables; the fixture and price levers are ignored in production.
+Preview environment variables scoped to the `mainnet` branch; the fixture and price levers are
+also ignored in production by the code.
 
 - `STELLAR_RISK_FIXTURE_ADDRESS` — the address served by the fixture adapter.
 - `RISK_DROP_PRICE_KEYS` — price keys removed from the price map (the "Unknown" demonstration).
-- `STELLAR_RPC` / `STELLAR_HORIZON_URL` — overrides, pointed at an unreachable host for the degradation demonstration (since spec 0004 the same lever is `RPC_URL_STELLAR`).
+- `RPC_URL_STELLAR` / `STELLAR_HORIZON_URL` — the Soroban RPC and Horizon URLs, pointed at an
+  unreachable host for the degradation demonstration.
+
+Each state is a redeploy of `mainnet` with its variables. A Vercel deployment keeps the variables
+it was built with, so the deployments recorded for the demo video still show their state:
+
+| State    | Deployment                                                                                                     | Variables                                                                         |
+| -------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Normal   | [lendwise-mainnet.vercel.app/portfolio](https://lendwise-mainnet.vercel.app/portfolio)                         | Fixture on, all prices present                                                    |
+| Unknown  | [lendwise-m1995tgo0-smarttdev.vercel.app/portfolio](https://lendwise-m1995tgo0-smarttdev.vercel.app/portfolio) | Fixture on, the XLM price of the Blend v2.1 Fixed pool removed from the price map |
+| Degraded | [lendwise-h1t6kk486-smarttdev.vercel.app/portfolio](https://lendwise-h1t6kk486-smarttdev.vercel.app/portfolio) | Fixture off, Soroban RPC and Horizon pointed at an unreachable host               |
+
+The fixture only serves its configured address: another Stellar wallet sees no fixture row. On the
+Degraded deployment, a Stellar wallet cannot sign in, since SEP-10 verification reads the account
+from Horizon; the recording shows that state with a session opened on the staging domain before the
+cut.
 
 ### Reviewer walkthrough on lendwise.fi
 
