@@ -37,15 +37,12 @@ const nextConfig: NextConfig = {
   // Exclude markdown files from being processed
   pageExtensions: ['tsx', 'ts', 'jsx', 'js'],
   // Exclude Node.js-only packages from being bundled (works with Turbopack).
-  // The Stellar SDK pulls base32.js 0.1.0, which calls the deprecated
-  // `new Buffer()`: bundled, Node takes it for app code and logs DEP0005 on
-  // every cold start; loaded from node_modules, Node stays quiet.
-  serverExternalPackages: [
-    'pino-pretty',
-    'thread-stream',
-    '@stellar/stellar-sdk',
-    '@blend-capital/blend-sdk',
-  ],
+  // Keep the Stellar and Blend SDKs bundled. Stellar SDK 16's ESM build
+  // imports a copy of js-xdr from `lib/esm/node_modules/…`, a folder with no
+  // package.json of its own, so Node cannot tell those files are ES modules.
+  // Loaded from node_modules on Vercel, Node reads them as CommonJS and
+  // /portfolio fails with "does not provide an export named 'config'".
+  serverExternalPackages: ['pino-pretty', 'thread-stream'],
   images: {
     remotePatterns: [
       {
