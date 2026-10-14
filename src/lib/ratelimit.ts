@@ -80,6 +80,13 @@ export const optimizerLimiter = createLimiter(10, 'lw:opt')
 export const stellarAuthLimiter = createLimiter(20, 'lw:sep10')
 
 /**
+ * 60 req/min per Stellar account — the CCTP bridge actions. The page polls a
+ * transfer every 5 s (12/min); the rest is a handful of steps. Keyed by the
+ * session address, not the IP: a NAT must not share one user's budget.
+ */
+export const bridgeLimiter = createLimiter(60, 'lw:bridge')
+
+/**
  * Client IP from the first hop of `x-forwarded-for`. Falls back to a shared
  * bucket when absent, which is the conservative choice: unattributable traffic
  * gets rate-limited together rather than escaping the limit entirely.
