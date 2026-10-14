@@ -16,13 +16,14 @@ import {
 import { Address, Networks, rpc as stellarRpc } from '@stellar/stellar-sdk'
 
 import { type ServerRpc, serverRpc } from '@/config/rpc.server'
+import { STELLAR_NETWORKS } from '@/config/stellar-network'
 import { redactRpcSecrets } from '@/lib/evm/redact'
 
 import type { BlendDeployment } from './deployments'
 import type { TokenMetadata } from './types'
 
 /** Public Soroban RPC, used when the RPC provider does not serve Stellar. */
-export const PUBLIC_SOROBAN_RPC = 'https://mainnet.sorobanrpc.com'
+export const PUBLIC_SOROBAN_RPC = STELLAR_NETWORKS.mainnet.publicSorobanRpcUrl
 
 /** Blend's network from a server RPC: its URL and auth header, or the public endpoint. */
 export function blendNetworkFrom(rpc: ServerRpc | null): Network {
