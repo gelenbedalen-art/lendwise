@@ -36,8 +36,16 @@ const nextConfig: NextConfig = {
   },
   // Exclude markdown files from being processed
   pageExtensions: ['tsx', 'ts', 'jsx', 'js'],
-  // Exclude Node.js-only packages from being bundled (works with Turbopack)
-  serverExternalPackages: ['pino-pretty', 'thread-stream'],
+  // Exclude Node.js-only packages from being bundled (works with Turbopack).
+  // The Stellar SDK pulls base32.js 0.1.0, which calls the deprecated
+  // `new Buffer()`: bundled, Node takes it for app code and logs DEP0005 on
+  // every cold start; loaded from node_modules, Node stays quiet.
+  serverExternalPackages: [
+    'pino-pretty',
+    'thread-stream',
+    '@stellar/stellar-sdk',
+    '@blend-capital/blend-sdk',
+  ],
   images: {
     remotePatterns: [
       {
