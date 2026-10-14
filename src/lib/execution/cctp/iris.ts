@@ -9,7 +9,8 @@ export type IrisMessageState =
       status: 'complete'
       message: `0x${string}`
       attestation: `0x${string}`
-      eventNonce: string
+      /** Informational only (Iris event counter, nullable in DB). The mint nonce is `parseCctpMessage(message).header.nonce`. */
+      eventNonce: string | null
     }
 
 export interface IrisClient {
@@ -77,7 +78,7 @@ export function createIrisClient(deps: {
         status: 'complete',
         message: msg.message as `0x${string}`,
         attestation: msg.attestation as `0x${string}`,
-        eventNonce: msg.eventNonce ?? '',
+        eventNonce: typeof msg.eventNonce === 'string' ? msg.eventNonce : null,
       }
     },
   }

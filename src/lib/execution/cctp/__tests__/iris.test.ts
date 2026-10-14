@@ -104,6 +104,36 @@ describe('createIrisClient.getMessage', () => {
     })
   })
 
+  it('returns eventNonce null when a complete response omits it or sends a non-string', async () => {
+    const { client } = clientReturning(
+      Response.json({
+        messages: [
+          { status: 'complete', message: '0x0001', attestation: '0xbeef' },
+        ],
+      }),
+      Response.json({
+        messages: [
+          {
+            status: 'complete',
+            message: '0x0001',
+            attestation: '0xbeef',
+            eventNonce: 42,
+          },
+        ],
+      })
+    )
+    expect(await client.getMessage(6, TX)).toEqual({
+      status: 'complete',
+      message: '0x0001',
+      attestation: '0xbeef',
+      eventNonce: null,
+    })
+    expect(await client.getMessage(6, TX)).toMatchObject({
+      status: 'complete',
+      eventNonce: null,
+    })
+  })
+
   it('refuses a malformed transaction hash without calling Iris', async () => {
     const { client, fetchFn } = clientReturning()
     await expect(
