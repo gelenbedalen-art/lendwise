@@ -86,6 +86,28 @@ describe('holdingsChains', () => {
     expect(spy.mock.calls[0][1]?.method).toBe('POST')
   })
 
+  it('reads the auth header again on every request', async () => {
+    await load()
+    const { freshHeadersFetch } = await import('./holdings-chains')
+    const spy = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response('{}')
+    )
+    const send = freshHeadersFetch('linea', spy as unknown as typeof fetch)
+    await send('https://rpc.example', { method: 'POST', body: 'a' })
+    vi.stubEnv('RPC_API_KEY_SECRET', 'rotated-secret')
+    await send('https://rpc.example', { method: 'POST', body: 'b' })
+    const auth = (i: number) =>
+      new Headers(spy.mock.calls[i][1]?.headers).get('Authorization')
+    expect(auth(0)).toBe(
+      `Basic ${Buffer.from(':server-secret').toString('base64')}`
+    )
+    expect(auth(1)).toBe(
+      `Basic ${Buffer.from(':rotated-secret').toString('base64')}`
+    )
+    expect(spy.mock.calls[1][1]?.body).toBe('b')
+  })
+
   it('uses a plain http transport on every chain, no fallback', async () => {
     const { chains } = await load()
     for (const c of chains)

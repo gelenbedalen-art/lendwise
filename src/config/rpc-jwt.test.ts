@@ -30,7 +30,7 @@ describe('signRpcJwt', () => {
     const token = signRpcJwt({ privateKeyPem, keyId: 'FINGERPRINT' }, 1_000)
     const [h, p, s] = token.split('.')
     expect(decode(h)).toEqual({ alg: 'ES256', typ: 'JWT', kid: 'FINGERPRINT' })
-    expect(decode(p)).toEqual({ iat: 1_000, exp: 1_000 + RPC_JWT_TTL_SECONDS })
+    expect(decode(p)).toEqual({ iat: 970, exp: 1_000 + RPC_JWT_TTL_SECONDS })
     expect(
       verify(
         'sha256',
@@ -60,6 +60,21 @@ describe('signRpcJwt', () => {
     expect(() => signRpcJwt({ privateKeyPem, keyId: 'K' }, 1)).toThrow(
       /RPC_JWT_PRIVATE_KEY/
     )
+  })
+})
+
+describe('signRpcJwt with a broken key', () => {
+  it('names the variable and never echoes the key', () => {
+    const garbage =
+      '-----BEGIN PRIVATE KEY-----\nTOPSECRETMATERIAL\n-----END PRIVATE KEY-----'
+    let message = ''
+    try {
+      signRpcJwt({ privateKeyPem: garbage, keyId: 'K' }, 1)
+    } catch (e) {
+      message = String(e)
+    }
+    expect(message).toMatch(/RPC_JWT_PRIVATE_KEY is not a valid PEM/)
+    expect(message).not.toContain('TOPSECRETMATERIAL')
   })
 })
 

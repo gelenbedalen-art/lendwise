@@ -5,13 +5,18 @@ function configuredSecrets(): (string | undefined)[] {
   const overrides = Object.entries(process.env)
     .filter(([name]) => name.startsWith('RPC_URL_'))
     .map(([, value]) => value)
-  return [process.env.RPC_API_KEY, process.env.RPC_API_KEY_SECRET, ...overrides]
+  return [
+    process.env.RPC_API_KEY,
+    process.env.RPC_API_KEY_SECRET,
+    process.env.RPC_JWT_PRIVATE_KEY,
+    ...overrides,
+  ]
 }
 
 /**
  * Log-safe text of a failure reason. viem error messages embed the full RPC
  * URL, so the Infura API key segment is replaced first. Then every configured
- * secret (by default the server RPC key and its secret) is masked, raw and
+ * secret (by default the server RPC key, its secret, and the JWT signing key) is masked, raw and
  * trimmed, along with the Basic-auth form of each, wherever it appears —
  * whatever the provider's URL shape. Longer values are masked first so a
  * shorter one never leaves a fragment of a longer one. Secrets shorter than

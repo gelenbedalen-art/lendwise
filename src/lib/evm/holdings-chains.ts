@@ -29,7 +29,7 @@ export function unavailableClient(reason: string): BalanceClient {
  */
 export function freshHeadersFetch(
   network: RpcNetwork,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl?: typeof fetch
 ): typeof fetch {
   return (input, init) => {
     const headers = new Headers(init?.headers)
@@ -38,7 +38,7 @@ export function freshHeadersFetch(
     )) {
       headers.set(name, value)
     }
-    return fetchImpl(input, { ...init, headers })
+    return (fetchImpl ?? fetch)(input, { ...init, headers })
   }
 }
 

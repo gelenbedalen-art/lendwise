@@ -3,6 +3,9 @@ import { type KeyObject, createPrivateKey, sign } from 'node:crypto'
 /** Lifetime of a signed RPC token. */
 export const RPC_JWT_TTL_SECONDS = 3_600
 
+/** `iat` backdated by this much, in case the provider's clock runs behind ours. */
+const CLOCK_SKEW_SECONDS = 30
+
 /** A cached token is replaced once less than this remains. */
 const REFRESH_BEFORE_SECONDS = 300
 
@@ -40,11 +43,20 @@ function algorithmOf(key: KeyObject): 'ES256' | 'RS256' {
  * server even if the API key leaked.
  */
 export function signRpcJwt(config: RpcJwtConfig, nowSeconds: number): string {
-  const key = createPrivateKey(normalizePem(config.privateKeyPem))
+  let key: KeyObject
+  try {
+    key = createPrivateKey(normalizePem(config.privateKeyPem))
+  } catch {
+    // No `cause`: the parser's error must never carry key material along.
+    throw new Error('RPC_JWT_PRIVATE_KEY is not a valid PEM private key')
+  }
   const alg = algorithmOf(key)
   const header = b64url(JSON.stringify({ alg, typ: 'JWT', kid: config.keyId }))
   const payload = b64url(
-    JSON.stringify({ iat: nowSeconds, exp: nowSeconds + RPC_JWT_TTL_SECONDS })
+    JSON.stringify({
+      iat: nowSeconds - CLOCK_SKEW_SECONDS,
+      exp: nowSeconds + RPC_JWT_TTL_SECONDS,
+    })
   )
   const data = `${header}.${payload}`
   const signature = sign(
