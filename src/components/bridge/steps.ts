@@ -105,3 +105,21 @@ export function formatElapsed(ms: number): string {
   if (m > 0) return `${m} min ${pad2(s)} s`
   return `${s} s`
 }
+
+/**
+ * Whether "New transfer" may be offered. Never once USDC may have left the
+ * source chain: a recorded burn, or one sent but not yet recorded
+ * (`pendingBurn`). Never while an action runs.
+ */
+export function canStartNew(
+  transfer: BridgeTransferView | null,
+  pendingBurn: { chainId: number; hash: string } | null,
+  busy: string | null
+): boolean {
+  if (transfer === null || pendingBurn !== null || busy !== null) return false
+  return (
+    transfer.hashes.burn === null ||
+    transfer.status === 'completed' ||
+    (transfer.status === 'failed' && !transfer.resumable)
+  )
+}

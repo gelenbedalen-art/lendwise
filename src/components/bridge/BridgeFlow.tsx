@@ -33,7 +33,7 @@ import { Button } from '@/components/ui/button'
 import type { StellarNetworkId } from '@/config/stellar-network'
 import { useStellarWallet } from '@/contexts/StellarWalletContext'
 import { useBridgeTransfer } from '@/hooks/useBridgeTransfer'
-import { cctpConfig } from '@/lib/execution/cctp/config'
+import { cctpConfig, evmTxUrl } from '@/lib/execution/cctp/config'
 import type { PreflightResult } from '@/lib/execution/cctp/trustline'
 import type { BridgeQuote, BridgeTransferView } from '@/lib/execution/cctp/view'
 import { requestPortfolioRefresh } from '@/lib/portfolio/refresh-event'
@@ -43,6 +43,7 @@ import { BridgePreflight } from './BridgePreflight'
 import { BridgeQuoteCard } from './BridgeQuoteCard'
 import { BridgeSteps } from './BridgeSteps'
 import { BridgeTransfersList } from './BridgeTransfersList'
+import { canStartNew } from './steps'
 
 type Preflight = PreflightResult & { friendbotUrl: string | null }
 
@@ -101,6 +102,13 @@ export function BridgeFlow({
   const [transfers, setTransfers] = useState<BridgeTransferView[]>([])
   const [busy, setBusy] = useState<string | null>(null)
   const [flowError, setFlowError] = useState<string | null>(null)
+  // A burn the wallet sent that the server has not recorded yet. While set, no
+  // second burn can start and the hash stays on screen.
+  const [pendingBurn, setPendingBurn] = useState<{
+    chainId: number
+    hash: string
+  } | null>(null)
+  const [warning, setWarning] = useState<string | null>(null)
   const {
     transfer,
     setTransfer,
@@ -108,6 +116,13 @@ export function BridgeFlow({
     error: refreshError,
   } = useBridgeTransfer()
   const hasTransfer = transfer !== null
+  const pendingBurnChain = pendingBurn
+    ? chains.find((c) => c.chainId === pendingBurn.chainId)
+    : undefined
+  const pendingBurnUrl =
+    pendingBurn && pendingBurnChain
+      ? evmTxUrl(pendingBurnChain, pendingBurn.hash)
+      : null
 
   // Quote and pre-flight follow the inputs, debounced, while no transfer runs.
   useEffect(() => {
@@ -146,6 +161,7 @@ export function BridgeFlow({
   async function run(label: string, fn: () => Promise<void>) {
     setBusy(label)
     setFlowError(null)
+    setWarning(null)
     try {
       await fn()
     } catch (err) {
@@ -221,7 +237,15 @@ export function BridgeFlow({
             functionName: 'approve',
             args: [burn.to, value],
           })
-          await recordApproval({ id: planned.id, txHash: approval })
+          const approvalRecorded = await recordApproval({
+            id: planned.id,
+            txHash: approval,
+          })
+          if (approvalRecorded.ok) setTransfer(approvalRecorded.value)
+          else
+            setWarning(
+              `The approval was sent but could not be shown here: ${approvalRecorded.error} The burn can proceed.`
+            )
           setBusy('Waiting for the approval…')
           const receipt = await waitForTransactionReceipt(config, {
             chainId: burn.chainId,
@@ -238,10 +262,11 @@ export function BridgeFlow({
           data: burn.data,
         })
         burned = true
+        setPendingBurn({ chainId: burn.chainId, hash })
         const recorded = await recordBurn({ id: planned.id, txHash: hash })
         if (!recorded.ok)
           throw new Error(
-            `Burn sent (${hash}) but not recorded: ${recorded.error} Use “Resume from a burn hash” below.`
+            `Burn sent (${hash}) but not recorded: ${recorded.error} Use “Record this burn” below.`
           )
         setTransfer(recorded.value)
 
@@ -307,11 +332,28 @@ export function BridgeFlow({
     transfer.resumable &&
     transfer.feeExecuted === null
   // Never offer a fresh start once USDC may have left the source chain.
-  const canStartNew =
-    transfer !== null &&
-    (transfer.hashes.burn === null ||
-      transfer.status === 'completed' ||
-      (transfer.status === 'failed' && !transfer.resumable))
+  const startNewAllowed = canStartNew(transfer, pendingBurn, busy)
+
+  // The pending burn is settled once a server view carries its hash.
+  useEffect(() => {
+    if (
+      pendingBurn &&
+      transfer?.hashes.burn?.toLowerCase() === pendingBurn.hash.toLowerCase()
+    )
+      setPendingBurn(null)
+  }, [pendingBurn, transfer])
+
+  const recordPendingBurn = () =>
+    run('Recording the burn…', async () => {
+      if (!pendingBurn) return
+      const r = await importBridgeBurn({
+        sourceChainId: pendingBurn.chainId,
+        txHash: pendingBurn.hash as `0x${string}`,
+      })
+      if (!r.ok) throw new Error(r.error)
+      setPendingBurn(null)
+      resume(r.value)
+    })
 
   return (
     <div className="flex flex-col gap-6">
@@ -332,6 +374,49 @@ export function BridgeFlow({
             right) to bridge.
             {network === 'testnet' &&
               ' Put both wallets on their test networks.'}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {session && (
+        <BridgeTransfersList
+          transfers={transfers}
+          chains={chains}
+          currentId={transfer?.id ?? null}
+          busy={busy !== null}
+          onResume={resume}
+          onImport={importBurn}
+        />
+      )}
+
+      {pendingBurn && (
+        <Alert>
+          <AlertDescription className="flex flex-col gap-2">
+            <span>
+              A burn was sent from your wallet but is not recorded yet:{' '}
+              <code className="break-all">{pendingBurn.hash}</code>
+              {pendingBurnUrl && (
+                <>
+                  {' '}
+                  <a
+                    className="underline"
+                    href={pendingBurnUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View on the explorer
+                  </a>
+                </>
+              )}
+              . Record it to continue; do not start another transfer.
+            </span>
+            <Button
+              className="w-fit"
+              disabled={busy !== null}
+              onClick={recordPendingBurn}
+            >
+              Record this burn
+            </Button>
           </AlertDescription>
         </Alert>
       )}
@@ -362,6 +447,7 @@ export function BridgeFlow({
               sourceChainId === null ||
               !quote ||
               preflight?.state !== 'ready' ||
+              pendingBurn !== null ||
               busy !== null
             }
             onClick={start}
@@ -415,7 +501,7 @@ export function BridgeFlow({
                 )}
               </Button>
             )}
-            {canStartNew && (
+            {startNewAllowed && (
               <Button
                 variant="ghost"
                 onClick={() => {
@@ -431,21 +517,15 @@ export function BridgeFlow({
       )}
 
       {busy && <p className="text-muted-foreground text-sm">{busy}</p>}
+      {warning && (
+        <Alert>
+          <AlertDescription>{warning}</AlertDescription>
+        </Alert>
+      )}
       {(flowError ?? refreshError) && (
         <Alert variant="destructive">
           <AlertDescription>{flowError ?? refreshError}</AlertDescription>
         </Alert>
-      )}
-
-      {ready && (
-        <BridgeTransfersList
-          transfers={transfers}
-          chains={chains}
-          currentId={transfer?.id ?? null}
-          busy={busy !== null}
-          onResume={resume}
-          onImport={importBurn}
-        />
       )}
     </div>
   )

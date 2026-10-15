@@ -5,6 +5,7 @@ import type { BridgeTransferView } from '@/lib/execution/cctp/view'
 import {
   attestationNote,
   bridgeSteps,
+  canStartNew,
   currentStep,
   elapsedSince,
   formatElapsed,
@@ -124,5 +125,54 @@ describe('elapsed time', () => {
     expect(formatElapsed(42_000)).toBe('42 s')
     expect(formatElapsed(125_000)).toBe('2 min 05 s')
     expect(formatElapsed(3_725_000)).toBe('1 h 02 min')
+  })
+})
+
+describe('canStartNew', () => {
+  const pending = { chainId: 84532, hash: '0xab' }
+  const burned = { changeTrust: null, approval: null, burn: '0xab', mint: null }
+
+  it('is false without a transfer', () => {
+    expect(canStartNew(null, null, null)).toBe(false)
+  })
+
+  it('is true for a planned transfer with no burn sent', () => {
+    expect(canStartNew(view(), null, null)).toBe(true)
+  })
+
+  it('is false once a burn was sent but not recorded', () => {
+    expect(canStartNew(view(), pending, null)).toBe(false)
+  })
+
+  it('is false while an action runs', () => {
+    expect(canStartNew(view(), null, 'Waiting…')).toBe(false)
+  })
+
+  it('is false after a recorded burn that is still moving or resumable', () => {
+    const t = view({
+      status: 'burn_confirmed',
+      hashes: burned,
+      resumable: true,
+    })
+    expect(canStartNew(t, null, null)).toBe(false)
+  })
+
+  it('is true when completed or after a reverted burn', () => {
+    expect(
+      canStartNew(view({ status: 'completed', hashes: burned }), null, null)
+    ).toBe(true)
+    expect(
+      canStartNew(
+        view({ status: 'failed', hashes: burned, resumable: false }),
+        null,
+        null
+      )
+    ).toBe(true)
+  })
+
+  it('stays false when completed but a pending burn is unrecorded', () => {
+    expect(canStartNew(view({ status: 'completed' }), pending, null)).toBe(
+      false
+    )
   })
 })
