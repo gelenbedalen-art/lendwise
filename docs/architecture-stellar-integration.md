@@ -284,7 +284,7 @@ flowchart TD
     Burn --> Iris["Circle Iris /v2/messages/{src}<br/>one paced request per poll"]
     Iris --> Validate["Attested message validated<br/>header + BurnMessageV2 body + hook recipient"]
     Validate --> StellarMint["User signs mint_and_forward — CctpForwarder<br/>MessageTransmitter.receive_message → TokenMessengerMinter"]
-    StellarMint --> NativeUSDC["Native USDC in the Stellar wallet<br/>(amount − feeExecuted) × 10, read from the mint events"]
+    StellarMint --> NativeUSDC["Native USDC in the Stellar wallet<br/>expected (amount − feeExecuted) × 10, read from the mint events"]
     NativeUSDC --> PortfolioUpdate["USDC in the unified portfolio (part 3)<br/>next step: supply on any Stellar venue"]
 
     Burn -.-> Audit[("bridge_transfers<br/>one row per transfer · every hash · resume state")]
@@ -396,12 +396,13 @@ flowchart LR
     C --> D{"Blend selected?"}
     D -->|"yes"| E["Guided CCTP flow<br/>trustline check → burn → attestation → mint<br/>native USDC in the Stellar wallet"]
     D -->|"no"| F["EVM venue<br/>existing flow, unchanged"]
-    E --> G["Blend position reflected in<br/>unified portfolio + health factor"]
+    E --> E2["User supplies USDC to the chosen venue<br/>(next step, outside the bridge)"]
+    E2 --> G["Blend position reflected in<br/>unified portfolio + health factor"]
     F --> G
     G --> B
 
     classDef core fill:#e5e7eb,stroke:#6b7280,color:#111827;
-    class A,B,C,D,E,F,G core;
+    class A,B,C,D,E,E2,F,G core;
 ```
 
 This is the guided flow the submission promises: **connect → compare → optimize → execute**, with
