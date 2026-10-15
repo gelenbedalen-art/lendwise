@@ -98,10 +98,50 @@ export function planBridgeFee(
   }
 }
 
-/** Circle's fee quote for `sourceDomain` → Stellar. Throws rather than plan without one. */
-export async function fetchFeeTiers(
+/** How long one Iris fee quote serves every quote of the same route. */
+export const FEE_TIERS_TTL_MS = 30_000
+
+/** Key `<Iris base URL>|<source domain>`; the promise is shared by concurrent quotes. */
+export type FeeTierCache = Map<
+  string,
+  { at: number; tiers: Promise<IrisFeeTier[]> }
+>
+
+// One per process, like irisQueue: every quote served by this instance shares it.
+const feeTierCache: FeeTierCache = new Map()
+
+interface FeeTierDeps {
+  irisBaseUrl: string
+  fetchFn?: typeof fetch
+  queue?: PacedQueue
+}
+
+/**
+ * Circle's fee quote for `sourceDomain` → Stellar. Throws rather than plan
+ * without one. A quote is reused for 30 s, so a burst of quotes costs one
+ * Iris request per route. The Iris base URL is part of the key: testnet and
+ * mainnet quotes never mix. A failure is not kept.
+ */
+export function fetchFeeTiers(
   sourceDomain: number,
-  deps: { irisBaseUrl: string; fetchFn?: typeof fetch; queue?: PacedQueue }
+  deps: FeeTierDeps & { cache?: FeeTierCache; now?: () => number }
+): Promise<IrisFeeTier[]> {
+  const cache = deps.cache ?? feeTierCache
+  const now = (deps.now ?? Date.now)()
+  const key = `${deps.irisBaseUrl}|${sourceDomain}`
+  const hit = cache.get(key)
+  if (hit && now - hit.at < FEE_TIERS_TTL_MS) return hit.tiers
+  const entry = { at: now, tiers: requestFeeTiers(sourceDomain, deps) }
+  cache.set(key, entry)
+  entry.tiers.catch(() => {
+    if (cache.get(key) === entry) cache.delete(key)
+  })
+  return entry.tiers
+}
+
+async function requestFeeTiers(
+  sourceDomain: number,
+  deps: FeeTierDeps
 ): Promise<IrisFeeTier[]> {
   const fetchFn = deps.fetchFn ?? fetch
   const url = `${deps.irisBaseUrl}/v2/burn/USDC/fees/${sourceDomain}/${STELLAR_CCTP_DOMAIN}`

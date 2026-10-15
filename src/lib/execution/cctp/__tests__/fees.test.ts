@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { PacedQueue } from '@/lib/net/paced-queue'
 
-import { BridgeFeeError, fetchFeeTiers, planBridgeFee } from '../fees'
+import {
+  BridgeFeeError,
+  type FeeTierCache,
+  fetchFeeTiers,
+  planBridgeFee,
+} from '../fees'
 
 const QUOTE = [
   { finalityThreshold: 1000, minimumFee: 1.3 },
@@ -95,6 +100,7 @@ describe('fetchFeeTiers', () => {
     const tiers = await fetchFeeTiers(6, {
       irisBaseUrl: 'https://iris-api.circle.com',
       fetchFn: fetchFn as unknown as typeof fetch,
+      cache: new Map(),
     })
     expect(fetchFn.mock.calls[0][0]).toBe(
       'https://iris-api.circle.com/v2/burn/USDC/fees/6/27'
@@ -108,6 +114,7 @@ describe('fetchFeeTiers', () => {
       fetchFeeTiers(6, {
         irisBaseUrl: 'https://x',
         fetchFn: fetchFn as unknown as typeof fetch,
+        cache: new Map(),
       })
     ).rejects.toThrow(/503/)
   })
@@ -124,7 +131,68 @@ describe('fetchFeeTiers', () => {
       irisBaseUrl: 'https://x',
       fetchFn: (async () => Response.json(QUOTE)) as unknown as typeof fetch,
       queue,
+      cache: new Map(),
     })
     expect(runs).toBe(1)
+  })
+})
+
+describe('fetchFeeTiers cache', () => {
+  const MAINNET = 'https://iris-api.circle.com'
+  const SANDBOX = 'https://iris-api-sandbox.circle.com'
+
+  function setup() {
+    let t = 1_000
+    const fetchFn = vi.fn(async (_url: string) => Response.json(QUOTE))
+    const cache: FeeTierCache = new Map()
+    const deps = (irisBaseUrl = MAINNET) => ({
+      irisBaseUrl,
+      fetchFn: fetchFn as unknown as typeof fetch,
+      cache,
+      now: () => t,
+    })
+    return { fetchFn, deps, advance: (ms: number) => (t += ms) }
+  }
+
+  it('serves two quotes within 30 s from one Iris request', async () => {
+    const { fetchFn, deps, advance } = setup()
+    await fetchFeeTiers(6, deps())
+    advance(29_999)
+    expect(await fetchFeeTiers(6, deps())).toEqual(QUOTE)
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks Iris again once 30 s have passed', async () => {
+    const { fetchFn, deps, advance } = setup()
+    await fetchFeeTiers(6, deps())
+    advance(30_000)
+    await fetchFeeTiers(6, deps())
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+  })
+
+  it('shares one request between concurrent quotes', async () => {
+    const { fetchFn, deps } = setup()
+    await Promise.all([fetchFeeTiers(6, deps()), fetchFeeTiers(6, deps())])
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps source domains and Iris networks apart', async () => {
+    const { fetchFn, deps } = setup()
+    await fetchFeeTiers(6, deps(MAINNET))
+    await fetchFeeTiers(3, deps(MAINNET))
+    await fetchFeeTiers(6, deps(SANDBOX))
+    expect(fetchFn.mock.calls.map((c) => c[0])).toEqual([
+      `${MAINNET}/v2/burn/USDC/fees/6/27`,
+      `${MAINNET}/v2/burn/USDC/fees/3/27`,
+      `${SANDBOX}/v2/burn/USDC/fees/6/27`,
+    ])
+  })
+
+  it('does not keep a failed quote', async () => {
+    const { fetchFn, deps } = setup()
+    fetchFn.mockResolvedValueOnce(new Response('busy', { status: 503 }))
+    await expect(fetchFeeTiers(6, deps())).rejects.toThrow(/503/)
+    expect(await fetchFeeTiers(6, deps())).toEqual(QUOTE)
+    expect(fetchFn).toHaveBeenCalledTimes(2)
   })
 })
