@@ -159,6 +159,51 @@ export async function fetchHorizonAccount(
 }
 
 /**
+ * Whether `hash` is a successful transaction from `address` holding only a
+ * ChangeTrust on this network's USDC, per Horizon. Only decides whether the
+ * hash is shown on the transfer, so any doubt (timeout, an error page instead
+ * of JSON) is false, never an error that would stop the transfer.
+ */
+export async function isChangeTrustBy(
+  hash: string,
+  address: string,
+  deps: {
+    horizonUrl: string
+    passphrase: string
+    usdc: Usdc
+    fetchFn?: typeof fetch
+  }
+): Promise<boolean> {
+  const fetchFn = deps.fetchFn ?? fetch
+  let tx: {
+    successful?: boolean
+    source_account?: string
+    envelope_xdr?: string
+  }
+  try {
+    const res = await fetchFn(`${deps.horizonUrl}/transactions/${hash}`, {
+      signal: AbortSignal.timeout(HORIZON_TIMEOUT_MS),
+    })
+    if (!res.ok) return false
+    tx = await res.json()
+  } catch {
+    return false
+  }
+  if (!tx?.successful || tx.source_account !== address || !tx.envelope_xdr)
+    return false
+  try {
+    assertSignedChangeTrust(tx.envelope_xdr, {
+      passphrase: deps.passphrase,
+      usdc: deps.usdc,
+      source: address,
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
  * The unsigned ChangeTrust the wallet signs: USDC of the network, no limit
  * (Stellar's maximum), so it also fixes a `limit-too-low` trustline.
  */

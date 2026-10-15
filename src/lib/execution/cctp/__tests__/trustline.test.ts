@@ -17,6 +17,7 @@ import {
   assertSignedChangeTrust,
   buildChangeTrustXdr,
   fetchHorizonAccount,
+  isChangeTrustBy,
   preflightFromAccount,
 } from '../trustline'
 
@@ -311,5 +312,77 @@ describe('assertSignedChangeTrust', () => {
     )
     bump.sign(kp)
     expect(codeOf(bump.toXDR())).toBe('fee-bump')
+  })
+})
+
+describe('isChangeTrustBy', () => {
+  const kp = Keypair.random()
+  const HASH = 'cd'.repeat(32)
+  const changeTrust = () => {
+    const tx = new TransactionBuilder(new Account(kp.publicKey(), '100'), {
+      fee: BASE_FEE,
+      networkPassphrase: Networks.PUBLIC,
+    })
+      .addOperation(
+        Operation.changeTrust({
+          asset: new Asset('USDC', USDC.issuer),
+          limit: MAX_TRUSTLINE_LIMIT,
+        })
+      )
+      .setTimeout(300)
+      .build()
+    tx.sign(kp)
+    return tx.toXDR()
+  }
+  const check = (fetchFn: typeof fetch) =>
+    isChangeTrustBy(HASH, kp.publicKey(), {
+      horizonUrl: 'https://horizon.example',
+      passphrase: Networks.PUBLIC,
+      usdc: USDC,
+      fetchFn,
+    })
+  const answering = (body: unknown, status = 200) =>
+    vi.fn(async () => new Response(JSON.stringify(body), { status }))
+
+  it('confirms a successful USDC ChangeTrust from the address', async () => {
+    const fetchFn = answering({
+      successful: true,
+      source_account: kp.publicKey(),
+      envelope_xdr: changeTrust(),
+    })
+    expect(await check(fetchFn as unknown as typeof fetch)).toBe(true)
+    expect(fetchFn).toHaveBeenCalledWith(
+      `https://horizon.example/transactions/${HASH}`,
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    )
+  })
+
+  it('says false for an unknown or failed transaction', async () => {
+    expect(await check(answering({}, 404) as unknown as typeof fetch)).toBe(
+      false
+    )
+    expect(
+      await check(
+        answering({
+          successful: false,
+          source_account: kp.publicKey(),
+          envelope_xdr: changeTrust(),
+        }) as unknown as typeof fetch
+      )
+    ).toBe(false)
+  })
+
+  it('says false, never throws, when Horizon times out', async () => {
+    const fetchFn = vi.fn(async () => {
+      throw new DOMException('The operation timed out.', 'TimeoutError')
+    })
+    expect(await check(fetchFn as unknown as typeof fetch)).toBe(false)
+  })
+
+  it('says false, never throws, on a body that is not JSON', async () => {
+    const fetchFn = vi.fn(
+      async () => new Response('<html>502 Bad Gateway</html>', { status: 200 })
+    )
+    expect(await check(fetchFn as unknown as typeof fetch)).toBe(false)
   })
 })

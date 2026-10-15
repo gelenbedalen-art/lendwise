@@ -32,9 +32,8 @@ import {
   assertSignedChangeTrust,
   buildChangeTrustXdr,
   fetchHorizonAccount,
+  isChangeTrustBy,
 } from './trustline'
-
-const HORIZON_TIMEOUT_MS = 8_000
 
 /**
  * The real I/O of the bridge, read per call (never at import): the dRPC JWT in
@@ -82,29 +81,8 @@ export function bridgeServiceDeps(
       const res = await new Horizon.Server(horizonUrl).submitTransaction(tx)
       return { hash: res.hash }
     },
-    isChangeTrustBy: async (hash, address) => {
-      const res = await fetch(`${horizonUrl}/transactions/${hash}`, {
-        signal: AbortSignal.timeout(HORIZON_TIMEOUT_MS),
-      })
-      if (!res.ok) return false
-      const tx = (await res.json()) as {
-        successful?: boolean
-        source_account?: string
-        envelope_xdr?: string
-      }
-      if (!tx.successful || tx.source_account !== address || !tx.envelope_xdr)
-        return false
-      try {
-        assertSignedChangeTrust(tx.envelope_xdr, {
-          passphrase,
-          usdc,
-          source: address,
-        })
-        return true
-      } catch {
-        return false
-      }
-    },
+    isChangeTrustBy: (hash, address) =>
+      isChangeTrustBy(hash, address, { horizonUrl, passphrase, usdc }),
     burnReceipt: (chain, txHash) =>
       verifyBurnReceipt({ chain, txHash, client: burnReceiptClient(chain) }),
     verifyMessage: (message, expected) => {
