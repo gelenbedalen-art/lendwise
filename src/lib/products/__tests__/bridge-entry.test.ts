@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { bridgeHref } from '@/lib/execution/cctp/deep-link'
 import {
+  allocationBridgeHref,
   bridgeActionFor,
   isStellarNetworkFiltered,
 } from '@/lib/products/bridge-entry'
@@ -78,5 +79,39 @@ describe('isStellarNetworkFiltered', () => {
     expect(
       isStellarNetworkFiltered([{ id: 'assetSymbol', value: 'USDC' }])
     ).toBe(false)
+  })
+})
+
+describe('allocationBridgeHref', () => {
+  it('pre-fills the amount allocated to a Stellar USDC venue', () => {
+    expect(allocationBridgeHref(STELLAR_USDC, 375)).toEqual({
+      amount: '375',
+      href: bridgeHref({ amount: '375', productId: STELLAR_USDC.productId }),
+    })
+  })
+
+  it('rounds the amount down to USDC precision', () => {
+    expect(allocationBridgeHref(STELLAR_USDC, 12.3456789)?.amount).toBe(
+      '12.345678'
+    )
+  })
+
+  it('keeps an exactly representable-looking amount whole', () => {
+    expect(allocationBridgeHref(STELLAR_USDC, 1.005)?.amount).toBe('1.005')
+  })
+
+  it('offers nothing below the bridge minimum or for a non-amount', () => {
+    expect(allocationBridgeHref(STELLAR_USDC, 0.99)).toBeNull()
+    expect(allocationBridgeHref(STELLAR_USDC, 0)).toBeNull()
+    expect(allocationBridgeHref(STELLAR_USDC, Number.NaN)).toBeNull()
+  })
+
+  it('offers nothing for an EVM venue or a non-USDC Stellar venue', () => {
+    expect(
+      allocationBridgeHref({ poolChainId: 8453, assetSymbol: 'USDC' }, 500)
+    ).toBeNull()
+    expect(
+      allocationBridgeHref({ poolChainId: -1, assetSymbol: 'XLM' }, 500)
+    ).toBeNull()
   })
 })
