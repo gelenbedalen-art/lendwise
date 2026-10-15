@@ -197,3 +197,11 @@ export function sameEvmAccount(
     owner.toLowerCase() === current.toLowerCase()
   )
 }
+
+/**
+ * A burn the wallet sent that the server refused to record. The "Record this
+ * burn" button sits in the pending-burn notice, above the error.
+ */
+export function burnNotRecordedMessage(hash: string, error: string): string {
+  return `Burn sent (${hash}) but not recorded: ${error} Use “Record this burn” above.`
+}

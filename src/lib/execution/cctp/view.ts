@@ -91,7 +91,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   'mint-not-found':
     'The mint transaction did not reach Stellar. Resume to sign it again.',
   'minted-amount-mismatch':
-    'USDC arrived, but not the expected amount. The team has been notified.',
+    'USDC arrived, but not the expected amount. Contact support if this persists.',
 }
 
 export function transferErrorMessage(stored: string | null): string | null {

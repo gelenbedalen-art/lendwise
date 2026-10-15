@@ -7,7 +7,7 @@ import { cctpConfig } from './config'
 
 vi.mock('@/lib/db/postgres', () => ({ db: {} }))
 
-const { toView } = await import('./view')
+const { toView, transferErrorMessage } = await import('./view')
 
 const network = stellarNetwork({ NEXT_PUBLIC_STELLAR_NETWORK: 'testnet' })
 const cctp = cctpConfig('testnet')
@@ -69,5 +69,15 @@ describe('toView tier', () => {
         toView(row({ mintedAmount: 1n, feeExecuted: 1n }), cctp, network)
       )
     ).not.toThrow()
+  })
+})
+
+describe('transferErrorMessage', () => {
+  it('promises nothing nobody does on a minted amount mismatch', () => {
+    expect(
+      transferErrorMessage('minted-amount-mismatch: expected 99987000, got 1')
+    ).toBe(
+      'USDC arrived, but not the expected amount. Contact support if this persists.'
+    )
   })
 })

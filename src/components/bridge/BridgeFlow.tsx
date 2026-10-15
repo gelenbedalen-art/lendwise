@@ -47,6 +47,7 @@ import { BridgeTransfersList } from './BridgeTransfersList'
 import {
   BURN_REPLACED_OR_CANCELLED,
   EVM_ACCOUNT_CHANGED,
+  burnNotRecordedMessage,
   burnReceiptOutcome,
   canStartNew,
   replacementImportOutcome,
@@ -287,9 +288,7 @@ export function BridgeFlow({
         setPendingBurn({ chainId: burn.chainId, hash })
         const recorded = await recordBurn({ id: planned.id, txHash: hash })
         if (!recorded.ok)
-          throw new Error(
-            `Burn sent (${hash}) but not recorded: ${recorded.error} Use “Record this burn” below.`
-          )
+          throw new Error(burnNotRecordedMessage(hash, recorded.error))
         setTransfer(recorded.value)
 
         setBusy('Waiting for the burn to confirm…')

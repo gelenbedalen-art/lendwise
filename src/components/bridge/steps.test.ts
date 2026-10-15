@@ -7,6 +7,7 @@ import {
   EVM_ACCOUNT_CHANGED,
   attestationNote,
   bridgeSteps,
+  burnNotRecordedMessage,
   burnReceiptOutcome,
   canStartNew,
   currentStep,
@@ -267,6 +268,14 @@ describe('sameEvmAccount', () => {
   it('tells the user to start again from the amount', () => {
     expect(EVM_ACCOUNT_CHANGED).toBe(
       'Your EVM account changed. Start again from the amount.'
+    )
+  })
+})
+
+describe('burnNotRecordedMessage', () => {
+  it('points at the "Record this burn" button, shown above the error', () => {
+    expect(burnNotRecordedMessage('0xab', 'Too many requests.')).toBe(
+      'Burn sent (0xab) but not recorded: Too many requests. Use “Record this burn” above.'
     )
   })
 })
