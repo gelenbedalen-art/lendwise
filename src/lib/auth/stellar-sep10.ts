@@ -99,9 +99,10 @@ function hostOf(value: string | undefined): string | null {
  * deployment URL — plus localhost outside production. Extra hosts (custom
  * domains attached to a branch or project, which Vercel exposes in no
  * variable) come from `STELLAR_SIGN_IN_EXTRA_HOSTS`, comma-separated. Only
- * hosts this deployment actually answers on may be listed there.
+ * hosts this deployment actually answers on may be listed there. The sign-in
+ * routes also check a request's `Origin` against it (same-origin.ts).
  */
-function allowedDomains(): Set<string> {
+export function allowedDomains(): Set<string> {
   const hosts = [
     process.env.VERCEL_PROJECT_PRODUCTION_URL,
     process.env.VERCEL_BRANCH_URL,
