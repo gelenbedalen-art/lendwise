@@ -46,9 +46,11 @@ import { BridgeSteps } from './BridgeSteps'
 import { BridgeTransfersList } from './BridgeTransfersList'
 import {
   BURN_REPLACED_OR_CANCELLED,
+  EVM_ACCOUNT_CHANGED,
   burnReceiptOutcome,
   canStartNew,
   replacementImportOutcome,
+  sameEvmAccount,
 } from './steps'
 
 type Preflight = PreflightResult & { friendbotUrl: string | null }
@@ -271,6 +273,10 @@ export function BridgeFlow({
             throw new Error('The USDC approval reverted.')
         }
 
+        // The burn must come from the account checked and approved above: a
+        // wallet switched meanwhile would burn from an unchecked account.
+        if (!sameEvmAccount(owner, getAccount(config).address))
+          throw new Error(EVM_ACCOUNT_CHANGED)
         setBusy('Confirm the burn in your wallet…')
         const hash = await sendTransaction(config, {
           chainId: burn.chainId,

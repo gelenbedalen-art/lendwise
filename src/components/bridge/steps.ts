@@ -178,3 +178,22 @@ export function replacementImportOutcome(
     return { kind: 'cancelled' }
   return { kind: 'error', message: result.error }
 }
+
+export const EVM_ACCOUNT_CHANGED =
+  'Your EVM account changed. Start again from the amount.'
+
+/**
+ * Whether the wallet's current EVM account is still `owner`, the account whose
+ * balance and allowance were checked and that approved the burn. Addresses
+ * compare without their checksum casing; a missing one never matches.
+ */
+export function sameEvmAccount(
+  owner: string | undefined,
+  current: string | undefined
+): boolean {
+  return (
+    owner !== undefined &&
+    current !== undefined &&
+    owner.toLowerCase() === current.toLowerCase()
+  )
+}

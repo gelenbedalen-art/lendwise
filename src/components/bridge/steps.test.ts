@@ -4,6 +4,7 @@ import type { BridgeTransferView } from '@/lib/execution/cctp/view'
 
 import {
   BURN_REPLACED_OR_CANCELLED,
+  EVM_ACCOUNT_CHANGED,
   attestationNote,
   bridgeSteps,
   burnReceiptOutcome,
@@ -12,6 +13,7 @@ import {
   elapsedSince,
   formatElapsed,
   replacementImportOutcome,
+  sameEvmAccount,
 } from './steps'
 
 const view = (over: Partial<BridgeTransferView> = {}): BridgeTransferView => ({
@@ -243,6 +245,28 @@ describe('replacementImportOutcome', () => {
   it('tells the user the burn was replaced or cancelled and no USDC left', () => {
     expect(BURN_REPLACED_OR_CANCELLED).toBe(
       'Your burn was replaced or cancelled in your wallet; no USDC left it.'
+    )
+  })
+})
+
+describe('sameEvmAccount', () => {
+  const OWNER = '0x52908400098527886E0F7030069857D2E4169EE7'
+
+  it('is the same account whatever the checksum casing', () => {
+    expect(sameEvmAccount(OWNER, OWNER.toLowerCase())).toBe(true)
+  })
+
+  it('refuses another account, or none', () => {
+    expect(
+      sameEvmAccount(OWNER, '0x8ba1f109551bD432803012645Ac136ddd64DBA72')
+    ).toBe(false)
+    expect(sameEvmAccount(OWNER, undefined)).toBe(false)
+    expect(sameEvmAccount(undefined, undefined)).toBe(false)
+  })
+
+  it('tells the user to start again from the amount', () => {
+    expect(EVM_ACCOUNT_CHANGED).toBe(
+      'Your EVM account changed. Start again from the amount.'
     )
   })
 })
