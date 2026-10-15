@@ -22,6 +22,7 @@ const navItems = [
   { label: 'Portfolio', href: '/portfolio' },
   { label: 'Supply', href: '/supply' },
   { label: 'Borrow', href: '/borrow' },
+  { label: 'Bridge', href: '/bridge/stellar' },
 ]
 
 /** dashboard header height (h-14) — the mobile menu hangs below it */

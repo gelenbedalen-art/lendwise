@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm'
 import { MAX_PRODUCT_IDS, clampPage } from '@/lib/db/pagination'
 import { db } from '@/lib/db/postgres'
 import {
+  type ProductRow,
   apyHourly,
   productAvailabilityPeriods,
   products,
@@ -415,6 +416,16 @@ export async function coalesceAvailabilityFlicker(
   }
 
   return { productsAffected, periodsRemoved, plans }
+}
+
+/** One catalogue row by id, or null. */
+export async function findProductById(id: string): Promise<ProductRow | null> {
+  const [row] = await db
+    .select()
+    .from(products)
+    .where(eq(products.id, id))
+    .limit(1)
+  return row ?? null
 }
 
 /** Active product ids (+ createdAt) — used by gap detection / status. */
