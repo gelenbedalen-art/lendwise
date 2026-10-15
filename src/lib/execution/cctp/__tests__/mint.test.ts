@@ -19,6 +19,7 @@ import {
   assertSignedMint,
   getMintStatus,
   isMessageAlreadyReceived,
+  latestLedgerSequence,
   mintedAmountFromEvents,
   prepareMintXdr,
   submitMint,
@@ -368,5 +369,14 @@ describe('isMessageAlreadyReceived', () => {
       )
     ).rejects.toThrow(/nonce/)
     expect(simulateTransaction).not.toHaveBeenCalled()
+  })
+})
+
+describe('latestLedgerSequence', () => {
+  it('reads the latest ledger sequence from the Soroban RPC', async () => {
+    const server = {
+      getLatestLedger: vi.fn(async () => ({ sequence: 61_234_567 })),
+    } as unknown as SorobanRpcLike
+    expect(await latestLedgerSequence(RPC, { server })).toBe(61_234_567)
   })
 })

@@ -116,6 +116,19 @@ export function parseCctpMessage(message: Hex): ParsedCctpMessage {
   }
 }
 
+/**
+ * Whether Stellar's TokenMessengerMinter refuses the message as expired at
+ * `ledgerSequence`. Same rule as stellar-cctp (token-messenger-minter-v2,
+ * receive.rs): `expiration_block != 0 && expiration_block <= e.ledger().sequence()`.
+ * On Stellar the "block" is the ledger sequence.
+ */
+export function isMessageExpired(
+  expirationBlock: bigint,
+  ledgerSequence: number
+): boolean {
+  return expirationBlock !== 0n && expirationBlock <= BigInt(ledgerSequence)
+}
+
 /** An EVM address stored right-aligned in a bytes32, or null if the high bytes are not zero. */
 function evmAddressOf(word: Hex): Hex | null {
   const hex = word.slice(2)

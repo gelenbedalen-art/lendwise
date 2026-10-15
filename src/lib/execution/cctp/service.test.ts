@@ -38,6 +38,10 @@ const EVM = '0x52908400098527886e0f7030069857d2e4169ee7'
 const OTHER_EVM = '0x8ba1f109551bd432803012645ac136ddd64dba72'
 const BURN = `0x${'ab'.repeat(32)}` as const
 const NOW = Date.parse('2026-10-20T10:00:00Z')
+/** The Soroban ledger the stub RPC reports as latest. */
+const LEDGER = 60_000_000
+/** A stored, attested message: what Iris returned and the service verified. */
+const MESSAGE = buildMessage()
 
 const testnet = stellarNetwork({ NEXT_PUBLIC_STELLAR_NETWORK: 'testnet' })
 const cctp = cctpConfig('testnet')
@@ -243,6 +247,7 @@ function makeDeps(over: Partial<Deps> = {}) {
       check: vi.fn<Mint['check']>(),
       hashOf: vi.fn<Mint['hashOf']>(() => 'ef'.repeat(32)),
       alreadyReceived: vi.fn<Mint['alreadyReceived']>(async () => false),
+      latestLedger: vi.fn<Mint['latestLedger']>(async () => LEDGER),
       submit: vi.fn<Mint['submit']>(async () => ({
         status: 'success',
         hash: 'ef'.repeat(32),
@@ -627,14 +632,54 @@ describe('refreshBridgeTransfer — one step per call', () => {
 })
 
 describe('mint', () => {
-  const attested = (seed: ReturnType<typeof memoryRepo>['seed']) =>
+  const attested = (
+    seed: ReturnType<typeof memoryRepo>['seed'],
+    message: string = MESSAGE
+  ) =>
     seed('attested', {
       burnTxHash: BURN,
       evmAddress: EVM,
-      message: '0x01',
+      message,
       attestation: '0x02',
       feeExecuted: 1300n,
     })
+
+  it('refuses to prepare a mint whose attestation expired, without moving the transfer', async () => {
+    const { service, seed, deps, repo, rows } = makeDeps()
+    const t = await attested(
+      seed,
+      buildMessage({ body: { expirationBlock: BigInt(LEDGER) } })
+    )
+    const r = await service.prepareBridgeMint({ id: t.id })
+    expect(r).toEqual({
+      ok: false,
+      code: 'message-expired',
+      error:
+        'This attestation has expired. Contact support to finish this transfer.',
+    })
+    expect(deps.horizonAccount).not.toHaveBeenCalled()
+    expect(deps.mint.prepare).not.toHaveBeenCalled()
+    expect(repo.advanceTransfer).not.toHaveBeenCalled()
+    expect(rows.get(t.id)!.status).toBe('attested')
+  })
+
+  it('prepares a mint whose expiration ledger is still ahead', async () => {
+    const { service, seed } = makeDeps()
+    const t = await attested(
+      seed,
+      buildMessage({ body: { expirationBlock: BigInt(LEDGER + 1) } })
+    )
+    expect(value(await service.prepareBridgeMint({ id: t.id }))).toEqual({
+      xdr: 'MINT_XDR',
+    })
+  })
+
+  it('never reads the ledger for a message without expiration', async () => {
+    const { service, seed, deps } = makeDeps()
+    const t = await attested(seed)
+    value(await service.prepareBridgeMint({ id: t.id }))
+    expect(deps.mint.latestLedger).not.toHaveBeenCalled()
+  })
 
   it('completes a message already received elsewhere instead of minting again', async () => {
     const { service, seed, deps } = makeDeps()

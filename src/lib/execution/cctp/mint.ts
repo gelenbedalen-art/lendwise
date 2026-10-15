@@ -30,6 +30,7 @@ export interface SorobanRpcLike {
   simulateTransaction(
     tx: Transaction
   ): Promise<rpc.Api.SimulateTransactionResponse>
+  getLatestLedger(): Promise<Pick<rpc.Api.GetLatestLedgerResponse, 'sequence'>>
 }
 
 export function sorobanServer(
@@ -88,6 +89,15 @@ export async function prepareMintXdr(
     .build()
   const prepared = await server.prepareTransaction(tx)
   return prepared.toXDR()
+}
+
+/** The sequence of the latest ledger the Soroban RPC knows. */
+export async function latestLedgerSequence(
+  connection: SorobanRpcConnection,
+  deps: { server?: SorobanRpcLike } = {}
+): Promise<number> {
+  const server = deps.server ?? sorobanServer(connection)
+  return (await server.getLatestLedger()).sequence
 }
 
 /** Before relaying: exactly the forwarder's mint_and_forward on the stored message, signed by the session account. */

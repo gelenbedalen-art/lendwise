@@ -23,6 +23,7 @@ import {
   assertSignedMint,
   getMintStatus,
   isMessageAlreadyReceived,
+  latestLedgerSequence,
   prepareMintXdr,
   submitMint,
 } from './mint'
@@ -136,6 +137,7 @@ export function bridgeServiceDeps(
           rpc,
           passphrase,
         }),
+      latestLedger: () => latestLedgerSequence(rpc),
       submit: (xdr, recipient) =>
         submitMint(xdr, {
           rpc,

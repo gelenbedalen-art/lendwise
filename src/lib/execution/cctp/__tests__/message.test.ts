@@ -6,6 +6,7 @@ import {
   CctpMessageMismatch,
   type ExpectedCctpTransfer,
   assertExpectedMessage,
+  isMessageExpired,
   parseCctpMessage,
 } from '../message'
 import { MESSAGE_FIXTURE, buildMessage } from './build-message'
@@ -145,5 +146,23 @@ describe('assertExpectedMessage', () => {
         burnToken: expected.burnToken.toLowerCase() as `0x${string}`,
       })
     ).toBeNull()
+  })
+})
+
+describe('isMessageExpired', () => {
+  // stellar-cctp token-messenger-minter-v2 receive.rs:
+  // `expiration_block != 0 && expiration_block <= e.ledger().sequence()`
+  it('never expires a message with expirationBlock 0', () => {
+    expect(isMessageExpired(0n, 1)).toBe(false)
+    expect(isMessageExpired(0n, 60_000_000)).toBe(false)
+  })
+
+  it('expires once the ledger sequence reaches the expiration block', () => {
+    expect(isMessageExpired(100n, 100)).toBe(true)
+    expect(isMessageExpired(100n, 101)).toBe(true)
+  })
+
+  it('keeps a message valid while the ledger is below the expiration block', () => {
+    expect(isMessageExpired(100n, 99)).toBe(false)
   })
 })

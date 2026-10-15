@@ -50,6 +50,8 @@ import {
   CctpMessageMismatch,
   type ExpectedCctpTransfer,
   type ParsedCctpMessage,
+  isMessageExpired,
+  parseCctpMessage,
 } from './message'
 import { MINT_TX_TIMEOUT_SECONDS, type MintSubmission } from './mint'
 import { SignedTxError } from './signed-tx'
@@ -143,6 +145,8 @@ export interface BridgeServiceDeps {
     ): void
     hashOf(signedXdr: string): string
     alreadyReceived(message: Hex): Promise<boolean>
+    /** Sequence of the latest Stellar ledger: what a message expiry is compared with. */
+    latestLedger(): Promise<number>
     submit(signedXdr: string, recipient: string): Promise<MintSubmission>
     status(hash: string, recipient: string): Promise<MintSubmission>
   }
@@ -736,6 +740,22 @@ export function createBridgeService(deps: BridgeServiceDeps) {
             )) ?? (await current(t))
           record('already_received', done)
           return { alreadyReceived: true as const, transfer: view(done) }
+        }
+        // Stopgap: an expired message can no longer be minted. Re-attesting
+        // it is a support operation; the transfer keeps its state.
+        const { expirationBlock } = parseCctpMessage(message).body
+        if (expirationBlock !== 0n) {
+          const ledger = await deps.mint.latestLedger()
+          if (isMessageExpired(expirationBlock, ledger)) {
+            record('message_expired', t, {
+              expirationBlock: expirationBlock.toString(),
+              ledger,
+            })
+            throw new BridgeError(
+              'message-expired',
+              'This attestation has expired. Contact support to finish this transfer.'
+            )
+          }
         }
         assertReady(
           await preflight(
