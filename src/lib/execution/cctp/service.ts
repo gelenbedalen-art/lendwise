@@ -46,6 +46,7 @@ import {
 } from './fees'
 import { contractIdToBytes32, decodeForwarderHookData } from './hook'
 import type { IrisClient } from './iris'
+import { BRIDGE_PAUSED_MESSAGE, isBridgeEnabled } from './kill-switch'
 import {
   CctpMessageMismatch,
   type ExpectedCctpTransfer,
@@ -281,6 +282,12 @@ export function createBridgeService(deps: BridgeServiceDeps) {
     } catch (err) {
       return failure(err)
     }
+  }
+
+  /** New transfers only: everything that finishes a started one stays open. */
+  function assertEnabled() {
+    if (!isBridgeEnabled(deps.network.id, deps.env))
+      throw new BridgeError('bridge-disabled', BRIDGE_PAUSED_MESSAGE)
   }
 
   function sourceChain(chainId: number): CctpSourceChain {
@@ -549,6 +556,7 @@ export function createBridgeService(deps: BridgeServiceDeps) {
   return {
     quoteBridge: (input: { sourceChainId: number; amount: string }) =>
       authed<BridgeQuote>(async () => {
+        assertEnabled()
         const i = parse(
           z.object({ sourceChainId: ChainId, amount: Amount }),
           input
@@ -599,6 +607,7 @@ export function createBridgeService(deps: BridgeServiceDeps) {
     }) =>
       authed<{ transfer: BridgeTransferView; burn: BurnRequest }>(
         async (session) => {
+          assertEnabled()
           const i = parse(
             z.object({
               sourceChainId: ChainId,

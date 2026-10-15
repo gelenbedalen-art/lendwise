@@ -315,7 +315,11 @@ describe('createBridgeTransfer', () => {
   it('enforces the mainnet cap server-side', async () => {
     const mainnet = cctpConfig('mainnet')
     const base = mainnet.sourceChains.find((c) => c.slug === 'base')!
-    const { service } = makeDeps({ network: stellarNetwork({}), cctp: mainnet })
+    const { service } = makeDeps({
+      network: stellarNetwork({}),
+      cctp: mainnet,
+      env: { CCTP_BRIDGE_ENABLED: '1' },
+    })
     const r = await service.createBridgeTransfer({
       sourceChainId: base.chainId,
       amount: '1000.01',
@@ -344,6 +348,101 @@ describe('createBridgeTransfer', () => {
     )
     expect(isChangeTrustBy).toHaveBeenCalledWith('cd'.repeat(32), G)
     expect(rows.get(r.transfer.id)!.changeTrustTxHash).toBeNull()
+  })
+})
+
+describe('kill switch (CCTP_BRIDGE_ENABLED)', () => {
+  const PAUSED = {
+    ok: false,
+    code: 'bridge-disabled',
+    error:
+      'The bridge is paused. Transfers in progress can still be finished here.',
+  }
+  const disabled = () => makeDeps({ env: { CCTP_BRIDGE_ENABLED: '0' } })
+
+  it('refuses a quote and a new transfer while paused, before any fee read or row', async () => {
+    const { service, deps, repo } = disabled()
+    expect(
+      await service.quoteBridge({
+        sourceChainId: baseSepolia.chainId,
+        amount: '10',
+      })
+    ).toEqual(PAUSED)
+    expect(
+      await service.createBridgeTransfer({
+        sourceChainId: baseSepolia.chainId,
+        amount: '10',
+      })
+    ).toEqual(PAUSED)
+    expect(deps.feeTiers).not.toHaveBeenCalled()
+    expect(repo.insertTransfer).not.toHaveBeenCalled()
+  })
+
+  it('is off on mainnet unless set to 1', async () => {
+    const mainnet = cctpConfig('mainnet')
+    const base = mainnet.sourceChains.find((c) => c.slug === 'base')!
+    const { service } = makeDeps({ network: stellarNetwork({}), cctp: mainnet })
+    expect(
+      await service.quoteBridge({ sourceChainId: base.chainId, amount: '10' })
+    ).toEqual(PAUSED)
+  })
+
+  it('still lets a transfer in progress be listed, resumed, imported and minted', async () => {
+    const { service, seed, deps } = disabled()
+    const t = await seed('burn_submitted', { burnTxHash: BURN })
+    vi.mocked(deps.burnReceipt).mockResolvedValue({
+      status: 'confirmed',
+      burn: burn(),
+    })
+
+    expect(value(await service.listBridgeTransfers())).toHaveLength(1)
+    expect(
+      value(await service.refreshBridgeTransfer({ id: t.id })).status
+    ).toBe('burn_confirmed')
+
+    vi.mocked(deps.iris.getMessage).mockResolvedValue({
+      status: 'complete',
+      message: MESSAGE,
+      attestation: '0x02',
+      eventNonce: '7',
+    })
+    expect(
+      value(await service.refreshBridgeTransfer({ id: t.id })).status
+    ).toBe('attested')
+    expect(value(await service.preflightBridge({ amount: '10' })).state).toBe(
+      'ready'
+    )
+    expect(value(await service.prepareBridgeMint({ id: t.id }))).toEqual({
+      xdr: 'MINT_XDR',
+    })
+    expect(
+      value(await service.submitBridgeMint({ id: t.id, signedXdr: 'SIGNED' }))
+        .status
+    ).toBe('completed')
+
+    const other = `0x${'cd'.repeat(32)}` as const
+    expect(
+      value(
+        await service.importBridgeBurn({
+          sourceChainId: baseSepolia.chainId,
+          txHash: other,
+        })
+      ).status
+    ).toBe('burn_confirmed')
+
+    const planned = await seed('planned')
+    expect(
+      value(await service.recordApproval({ id: planned.id, txHash: BURN }))
+        .hashes.approval
+    ).toBe(BURN)
+    expect(
+      value(
+        await service.recordBurn({
+          id: planned.id,
+          txHash: `0x${'ee'.repeat(32)}`,
+        })
+      ).status
+    ).toBe('burn_submitted')
   })
 })
 

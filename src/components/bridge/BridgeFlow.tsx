@@ -34,6 +34,7 @@ import type { StellarNetworkId } from '@/config/stellar-network'
 import { useStellarWallet } from '@/contexts/StellarWalletContext'
 import { useBridgeTransfer } from '@/hooks/useBridgeTransfer'
 import { cctpConfig, evmTxUrl } from '@/lib/execution/cctp/config'
+import { BRIDGE_PAUSED_MESSAGE } from '@/lib/execution/cctp/kill-switch'
 import type { PreflightResult } from '@/lib/execution/cctp/trustline'
 import type { BridgeQuote, BridgeTransferView } from '@/lib/execution/cctp/view'
 import { requestPortfolioRefresh } from '@/lib/portfolio/refresh-event'
@@ -63,6 +64,8 @@ function readable(err: unknown): string {
 
 export interface BridgeFlowProps {
   network: StellarNetworkId
+  /** `CCTP_BRIDGE_ENABLED`, read on the server: false hides the form, never the resume. */
+  enabled: boolean
   initialAmount: string | null
   initialSourceChainId: number | null
   productId: string | null
@@ -72,6 +75,7 @@ export interface BridgeFlowProps {
 
 export function BridgeFlow({
   network,
+  enabled,
   initialAmount,
   initialSourceChainId,
   productId,
@@ -133,7 +137,8 @@ export function BridgeFlow({
   useEffect(() => {
     setQuote(null)
     setPreflight(null)
-    if (!ready || !amount || sourceChainId === null || hasTransfer) return
+    if (!enabled || !ready || !amount || sourceChainId === null || hasTransfer)
+      return
     let cancelled = false
     const timer = setTimeout(async () => {
       const [q, p] = await Promise.all([
@@ -151,7 +156,7 @@ export function BridgeFlow({
       cancelled = true
       clearTimeout(timer)
     }
-  }, [ready, amount, sourceChainId, hasTransfer])
+  }, [enabled, ready, amount, sourceChainId, hasTransfer])
 
   // The session's transfers, reloaded whenever the one on screen changes state.
   useEffect(() => {
@@ -454,7 +459,13 @@ export function BridgeFlow({
         </Alert>
       )}
 
-      {ready && session && !transfer && (
+      {!enabled && !transfer && (
+        <Alert>
+          <AlertDescription>{BRIDGE_PAUSED_MESSAGE}</AlertDescription>
+        </Alert>
+      )}
+
+      {enabled && ready && session && !transfer && (
         <>
           <BridgeQuoteCard
             chains={chains}
