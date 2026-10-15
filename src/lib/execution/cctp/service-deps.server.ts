@@ -9,6 +9,7 @@ import {
 } from '@/config/stellar-network.server'
 import { requireStellarSession } from '@/lib/auth/session-guard'
 import * as repository from '@/lib/db/repositories/bridge-transfers'
+import { redactRpcSecrets } from '@/lib/evm/redact'
 import { bridgeLimiter } from '@/lib/ratelimit'
 
 import { cctpConfig } from './config'
@@ -146,7 +147,14 @@ export function bridgeServiceDeps(
     },
     now: () => Date.now(),
     log: (event, data) => {
-      const line = { event, ...data }
+      // Redact every string: errors embed RPC URLs with the provider key.
+      const safe = Object.fromEntries(
+        Object.entries(data).map(([k, v]) => [
+          k,
+          typeof v === 'string' ? redactRpcSecrets(v) : v,
+        ])
+      )
+      const line = { event, ...safe }
       if (
         event === 'error' ||
         event.endsWith('mismatch') ||

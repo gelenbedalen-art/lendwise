@@ -42,7 +42,7 @@ export function sorobanServer(
 }
 
 /** The user has 5 minutes to sign; past that the server prepares a fresh one. */
-const MINT_TX_TIMEOUT_SECONDS = 300
+export const MINT_TX_TIMEOUT_SECONDS = 300
 
 function hexBytes(hex: `0x${string}`): Buffer {
   return Buffer.from(hex.slice(2), 'hex')

@@ -234,8 +234,14 @@ export const bridgeTransfers = pgTable(
       .defaultNow(),
   },
   (t) => [
-    // One burn, one transfer. NULLs (not burned yet) do not collide.
-    uniqueIndex('bridge_transfers_burn').on(t.sourceDomain, t.burnTxHash),
+    // One burn, one transfer, per owner. A burn hash is public: a global index
+    // would let any session squat a victim's hash. NULLs (not burned yet) do
+    // not collide.
+    uniqueIndex('bridge_transfers_burn').on(
+      t.sourceDomain,
+      t.burnTxHash,
+      t.stellarAddress
+    ),
     index('bridge_transfers_owner').on(t.stellarAddress, t.createdAt),
   ]
 )

@@ -13,10 +13,11 @@ import type {
 import { buildMessage } from './__tests__/build-message'
 import { tokenMessengerV2Abi } from './abis'
 import { cctpConfig } from './config'
-import type { VerifiedBurn } from './evm-receipt'
+import { BurnReceiptError, type VerifiedBurn } from './evm-receipt'
 import { planBridgeFee } from './fees'
 import { contractIdToBytes32, encodeForwarderHookData } from './hook'
 import { CctpMessageMismatch, parseCctpMessage } from './message'
+import { MINT_TX_TIMEOUT_SECONDS } from './mint'
 import { SignedTxError } from './signed-tx'
 import type { HorizonAccount } from './trustline'
 
@@ -68,6 +69,7 @@ function memoryRepo() {
   const duplicate = (
     domain: number,
     hash: string | null | undefined,
+    owner: string,
     id?: string
   ) =>
     !!hash &&
@@ -75,13 +77,14 @@ function memoryRepo() {
       (r) =>
         r.id !== id &&
         r.sourceDomain === domain &&
+        r.stellarAddress === owner &&
         r.burnTxHash === hash.toLowerCase()
     )
   const uniqueViolation = () =>
     Object.assign(new Error('duplicate key'), { code: '23505' })
   const repo = {
     insertTransfer: vi.fn(async (input: NewBridgeTransfer) => {
-      if (duplicate(input.sourceDomain, input.burnTxHash))
+      if (duplicate(input.sourceDomain, input.burnTxHash, input.stellarAddress))
         throw uniqueViolation()
       const t: BridgeTransfer = {
         id: `t${++seq}`,
@@ -138,7 +141,7 @@ function memoryRepo() {
       ) => {
         const t = rows.get(id)
         if (!t || !from.includes(t.status)) return null
-        if (duplicate(t.sourceDomain, patch.burnTxHash, id))
+        if (duplicate(t.sourceDomain, patch.burnTxHash, t.stellarAddress, id))
           throw uniqueViolation()
         const next = { ...t, ...patch, status: to, updatedAt: new Date(NOW) }
         rows.set(id, next)
@@ -738,6 +741,92 @@ describe('view tiers', () => {
 beforeEach(() => {
   vi.clearAllMocks()
 })
+describe('burn hash ownership', () => {
+  it('lets another address import a burn whose hash a stranger already recorded', async () => {
+    const { service, deps, seed } = makeDeps()
+    const squat = await seed('planned')
+    value(await service.recordBurn({ id: squat.id, txHash: BURN }))
+
+    const asB = createBridgeService({
+      ...deps,
+      session: vi.fn<Deps['session']>(async () => ({
+        address: OTHER_G,
+        sid: 's'.repeat(16),
+        expiresAt: NOW / 1000 + 3600,
+      })),
+    })
+    vi.mocked(deps.burnReceipt).mockResolvedValue({
+      status: 'confirmed',
+      burn: burn({ hookData: encodeForwarderHookData(OTHER_G) }),
+    })
+    const v = value(
+      await asB.importBridgeBurn({
+        sourceChainId: baseSepolia.chainId,
+        txHash: BURN,
+      })
+    )
+    expect(v).toMatchObject({
+      status: 'burn_confirmed',
+      hashes: { burn: BURN },
+    })
+    expect(v.id).not.toBe(squat.id)
+  })
+
+  it('frees the hash of a row that fails on a burn mismatch, keeping it in the error', async () => {
+    const { service, seed, deps, rows } = makeDeps()
+    const t = await seed('burn_submitted', { burnTxHash: BURN })
+    vi.mocked(deps.burnReceipt).mockResolvedValue({
+      status: 'confirmed',
+      burn: burn({ amount: 5_000_000n }),
+    })
+    const v = value(await service.refreshBridgeTransfer({ id: t.id }))
+    expect(v).toMatchObject({ status: 'failed', hashes: { burn: null } })
+    expect(rows.get(t.id)!.burnTxHash).toBeNull()
+    expect(rows.get(t.id)!.error).toBe(`burn-mismatch: amount (burn ${BURN})`)
+
+    vi.mocked(deps.burnReceipt).mockResolvedValue({
+      status: 'confirmed',
+      burn: burn({ amount: 5_000_000n }),
+    })
+    const imported = value(
+      await service.importBridgeBurn({
+        sourceChainId: baseSepolia.chainId,
+        txHash: BURN,
+      })
+    )
+    expect(imported.id).not.toBe(t.id)
+    expect(imported.status).toBe('burn_confirmed')
+  })
+})
+
+describe('secrets', () => {
+  it('stores and logs a failure detail without the RPC key', async () => {
+    vi.stubEnv('RPC_API_KEY', 'sekret-key-123')
+    try {
+      const { service, seed, deps, rows } = makeDeps()
+      const t = await seed('burn_submitted', { burnTxHash: BURN })
+      vi.mocked(deps.burnReceipt).mockRejectedValue(
+        new BurnReceiptError(
+          'reverted',
+          'request to https://rpc.example/v1/sekret-key-123 failed'
+        )
+      )
+      value(await service.refreshBridgeTransfer({ id: t.id }))
+      expect(rows.get(t.id)!.error).toContain('burn-reverted')
+      expect(rows.get(t.id)!.error).not.toContain('sekret-key-123')
+      expect(JSON.stringify(vi.mocked(deps.log).mock.calls)).not.toContain(
+        'sekret-key-123'
+      )
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('keeps the mint timeout beyond the transaction validity window', () => {
+    expect(MINT_PENDING_TIMEOUT_MS).toBe((MINT_TX_TIMEOUT_SECONDS + 30) * 1000)
+  })
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
 })

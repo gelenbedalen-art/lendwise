@@ -24,5 +24,5 @@ CREATE TABLE "bridge_transfers" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX "bridge_transfers_burn" ON "bridge_transfers" USING btree ("source_domain","burn_tx_hash");--> statement-breakpoint
+CREATE UNIQUE INDEX "bridge_transfers_burn" ON "bridge_transfers" USING btree ("source_domain","burn_tx_hash","stellar_address");--> statement-breakpoint
 CREATE INDEX "bridge_transfers_owner" ON "bridge_transfers" USING btree ("stellar_address","created_at");

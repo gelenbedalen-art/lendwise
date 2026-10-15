@@ -15,6 +15,7 @@ import {
   type TransferPatch,
   isUniqueViolation,
 } from '@/lib/db/repositories/bridge-transfers'
+import { redactRpcSecrets } from '@/lib/evm/redact'
 import type { LimitResult } from '@/lib/ratelimit'
 
 import {
@@ -50,7 +51,7 @@ import {
   type ExpectedCctpTransfer,
   type ParsedCctpMessage,
 } from './message'
-import type { MintSubmission } from './mint'
+import { MINT_TX_TIMEOUT_SECONDS, type MintSubmission } from './mint'
 import { SignedTxError } from './signed-tx'
 import {
   type HorizonAccount,
@@ -68,8 +69,12 @@ import {
 
 type Hex = `0x${string}`
 
-/** A mint still unknown to Soroban after this long did not land: resign it. */
-export const MINT_PENDING_TIMEOUT_MS = 2 * 60_000
+/**
+ * A mint still unknown to Soroban after this long did not land: resign it.
+ * It must outlast the transaction's validity window, or a transaction could
+ * land after the transfer was marked as not found.
+ */
+export const MINT_PENDING_TIMEOUT_MS = (MINT_TX_TIMEOUT_SECONDS + 30) * 1000
 
 export interface BridgeRepository {
   insertTransfer(input: NewBridgeTransfer): Promise<BridgeTransfer>
@@ -239,7 +244,7 @@ export function createBridgeService(deps: BridgeServiceDeps) {
       }
     }
     deps.log('error', {
-      message: err instanceof Error ? err.message : String(err),
+      message: redactRpcSecrets(err),
     })
     return { ok: false, error: GENERIC, code: 'internal' }
   }
@@ -341,9 +346,13 @@ export function createBridgeService(deps: BridgeServiceDeps) {
     t: BridgeTransfer,
     from: BridgeTransferStatus[],
     code: string,
-    detail: string
+    rawDetail: string,
+    patch: TransferPatch = {}
   ): Promise<BridgeTransfer> {
+    // viem errors embed the RPC URL, key included: never store or log it.
+    const detail = redactRpcSecrets(rawDetail)
     const next = await deps.repo.advanceTransfer(t.id, from, 'failed', {
+      ...patch,
       error: `${code}: ${detail}`,
     })
     if (!next) return current(t)
@@ -366,7 +375,16 @@ export function createBridgeService(deps: BridgeServiceDeps) {
     }
     if (state.status === 'pending') return t
     const mismatch = burnMismatch(state.burn, chain, session.address, t)
-    if (mismatch) return fail(t, ['burn_submitted'], 'burn-mismatch', mismatch)
+    if (mismatch)
+      // Free the hash: the unique index would otherwise keep this burn bound
+      // to a row that can never use it. The hash stays in the error detail.
+      return fail(
+        t,
+        ['burn_submitted'],
+        'burn-mismatch',
+        `${mismatch} (burn ${t.burnTxHash})`,
+        { burnTxHash: null }
+      )
     const next = await deps.repo.advanceTransfer(
       t.id,
       ['burn_submitted'],
@@ -738,7 +756,7 @@ export function createBridgeService(deps: BridgeServiceDeps) {
           .catch((err: unknown): MintSubmission => {
             deps.log('mint_submit_error', {
               transferId: t.id,
-              message: err instanceof Error ? err.message : String(err),
+              message: redactRpcSecrets(err),
             })
             return { status: 'pending', hash }
           })
@@ -766,6 +784,7 @@ export function createBridgeService(deps: BridgeServiceDeps) {
           session.address
         )
         if (existing) return view(existing)
+        // No amount cap here on purpose: the USDC already burned, so refusing would strand it.
         const state = await deps.burnReceipt(chain, hash as Hex)
         if (state.status === 'pending')
           throw new BridgeError(
