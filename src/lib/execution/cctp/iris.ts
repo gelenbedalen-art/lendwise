@@ -1,4 +1,8 @@
-import { type PacedQueue, createPacedQueue } from '@/lib/net/paced-queue'
+import {
+  type PacedQueue,
+  QueueFullError,
+  createPacedQueue,
+} from '@/lib/net/paced-queue'
 
 export type IrisMessageState =
   | {
@@ -24,8 +28,15 @@ export interface IrisClient {
  * One queue per process for every Iris call (messages and fee quotes): Circle
  * blocks the caller for 5 minutes past 35 requests/s, and this process may
  * serve several pollers at once. Same primitive as Blend's `pacedRpc`.
+ *
+ * At most 20 calls wait or run (5 s of pacing). Past that, a call fails at
+ * once: a poll reads as `rate-limited` and a quote as no fee tier, instead of
+ * a backlog that outlives the requests waiting on it.
  */
-export const irisQueue: PacedQueue = createPacedQueue({ minIntervalMs: 250 })
+export const irisQueue: PacedQueue = createPacedQueue({
+  minIntervalMs: 250,
+  maxPending: 20,
+})
 
 const TX_HASH = /^0x[0-9a-fA-F]{64}$/
 const HEX = /^0x([0-9a-fA-F]{2})+$/
@@ -49,12 +60,20 @@ export function createIrisClient(deps: {
       if (!TX_HASH.test(txHash))
         throw new Error('Invalid burn transaction hash')
       const url = `${deps.baseUrl}/v2/messages/${sourceDomain}?transactionHash=${txHash}`
-      const res = await queue.run(() =>
-        fetchFn(url, {
-          headers: { accept: 'application/json' },
-          signal: AbortSignal.timeout(10_000),
-        })
-      )
+      let res: Response
+      try {
+        res = await queue.run(() =>
+          fetchFn(url, {
+            headers: { accept: 'application/json' },
+            signal: AbortSignal.timeout(10_000),
+          })
+        )
+      } catch (err) {
+        // Not sent: the next poll asks again.
+        if (err instanceof QueueFullError)
+          return { status: 'pending', reason: 'rate-limited' }
+        throw err
+      }
       if (res.status === 404) return { status: 'pending', reason: 'not-found' }
       if (res.status === 429)
         return { status: 'pending', reason: 'rate-limited' }

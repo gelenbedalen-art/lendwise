@@ -9,12 +9,13 @@ import type {
   NewBridgeTransfer,
   TransferPatch,
 } from '@/lib/db/repositories/bridge-transfers'
+import { type PacedQueue, QueueFullError } from '@/lib/net/paced-queue'
 
 import { buildMessage } from './__tests__/build-message'
 import { tokenMessengerV2Abi } from './abis'
 import { cctpConfig } from './config'
 import { BurnReceiptError, type VerifiedBurn } from './evm-receipt'
-import { planBridgeFee } from './fees'
+import { fetchFeeTiers, planBridgeFee } from './fees'
 import { contractIdToBytes32, encodeForwarderHookData } from './hook'
 import { CctpMessageMismatch, parseCctpMessage } from './message'
 import { MINT_TX_TIMEOUT_SECONDS } from './mint'
@@ -384,6 +385,35 @@ describe('session and rate limit', () => {
     expect(r).toMatchObject({ ok: false, code: 'rate-limited' })
     expect(deps.session).not.toHaveBeenCalled()
     expect(deps.limit).not.toHaveBeenCalled()
+  })
+})
+
+describe('quoteBridge', () => {
+  it('answers fee-no-tier when the Iris queue is full', async () => {
+    const full: PacedQueue = {
+      run: () => Promise.reject(new QueueFullError(20)),
+    }
+    const fetchFn = vi.fn()
+    const { service } = makeDeps({
+      feeTiers: (domain) =>
+        fetchFeeTiers(domain, {
+          irisBaseUrl: cctp.irisBaseUrl,
+          fetchFn: fetchFn as unknown as typeof fetch,
+          queue: full,
+          cache: new Map(),
+        }),
+    })
+    const r = await service.quoteBridge({
+      sourceChainId: baseSepolia.chainId,
+      amount: '10',
+    })
+    expect(r).toEqual({
+      ok: false,
+      code: 'fee-no-tier',
+      error:
+        'Circle has no fee quote for this route right now. Try again later.',
+    })
+    expect(fetchFn).not.toHaveBeenCalled()
   })
 })
 

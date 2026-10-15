@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { createPacedQueue } from '@/lib/net/paced-queue'
+import {
+  type PacedQueue,
+  QueueFullError,
+  createPacedQueue,
+} from '@/lib/net/paced-queue'
 
-import { createIrisClient } from '../iris'
+import { createIrisClient, irisQueue } from '../iris'
 
 const TX = `0x${'ab'.repeat(32)}` as const
 const BASE = 'https://iris-api-sandbox.circle.com'
@@ -162,5 +166,41 @@ describe('createIrisClient.getMessage', () => {
     await Promise.all([client.getMessage(6, TX), client.getMessage(6, TX)])
     expect(fetchFn).toHaveBeenCalledTimes(2)
     expect(sleeps).toEqual([250])
+  })
+})
+
+describe('a full Iris queue', () => {
+  it('reports the poll as rate-limited pending, without calling Iris', async () => {
+    const full: PacedQueue = {
+      run: () => Promise.reject(new QueueFullError(20)),
+    }
+    const fetchFn = vi.fn()
+    const client = createIrisClient({
+      baseUrl: BASE,
+      fetchFn: fetchFn as unknown as typeof fetch,
+      queue: full,
+    })
+    expect(await client.getMessage(6, TX)).toEqual({
+      status: 'pending',
+      reason: 'rate-limited',
+    })
+    expect(fetchFn).not.toHaveBeenCalled()
+  })
+
+  it('is reached at 20 waiting calls on the shared queue', async () => {
+    // Only the pacing sleeps are faked: the queue's clock stays real.
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      const waiting = Array.from({ length: 20 }, (_, i) =>
+        irisQueue.run(async () => i)
+      )
+      await expect(irisQueue.run(async () => 20)).rejects.toBeInstanceOf(
+        QueueFullError
+      )
+      await vi.runAllTimersAsync()
+      await expect(Promise.all(waiting)).resolves.toHaveLength(20)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

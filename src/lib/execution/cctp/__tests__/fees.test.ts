@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import type { PacedQueue } from '@/lib/net/paced-queue'
+import { type PacedQueue, QueueFullError } from '@/lib/net/paced-queue'
 
 import {
   BridgeFeeError,
@@ -134,6 +134,22 @@ describe('fetchFeeTiers', () => {
       cache: new Map(),
     })
     expect(runs).toBe(1)
+  })
+
+  it('reports a full Iris queue as no fee tier, without calling Iris', async () => {
+    const fetchFn = vi.fn()
+    const full: PacedQueue = {
+      run: () => Promise.reject(new QueueFullError(20)),
+    }
+    const quote = fetchFeeTiers(6, {
+      irisBaseUrl: 'https://x',
+      fetchFn: fetchFn as unknown as typeof fetch,
+      queue: full,
+      cache: new Map(),
+    })
+    await expect(quote).rejects.toBeInstanceOf(BridgeFeeError)
+    await expect(quote).rejects.toMatchObject({ code: 'no-tier' })
+    expect(fetchFn).not.toHaveBeenCalled()
   })
 })
 

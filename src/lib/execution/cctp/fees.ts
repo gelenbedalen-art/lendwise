@@ -1,4 +1,4 @@
-import type { PacedQueue } from '@/lib/net/paced-queue'
+import { type PacedQueue, QueueFullError } from '@/lib/net/paced-queue'
 
 import { evmToStellarAtomic } from './amounts'
 import { FINALITY_THRESHOLD, STELLAR_CCTP_DOMAIN } from './config'
@@ -150,7 +150,15 @@ async function requestFeeTiers(
       headers: { accept: 'application/json' },
       signal: AbortSignal.timeout(10_000),
     })
-  const res = await (deps.queue ? deps.queue.run(call) : call())
+  let res: Response
+  try {
+    res = await (deps.queue ? deps.queue.run(call) : call())
+  } catch (err) {
+    // The Iris queue is full: no quote right now, the user tries again.
+    if (err instanceof QueueFullError)
+      throw new BridgeFeeError('no-tier', 'The Iris queue is full')
+    throw err
+  }
   if (!res.ok) throw new Error(`Circle fee quote failed: HTTP ${res.status}`)
   const body: unknown = await res.json()
   if (!Array.isArray(body)) throw new Error('Circle fee quote is not a list')
