@@ -31,6 +31,7 @@ export interface SorobanRpcLike {
     tx: Transaction
   ): Promise<rpc.Api.SimulateTransactionResponse>
   getLatestLedger(): Promise<Pick<rpc.Api.GetLatestLedgerResponse, 'sequence'>>
+  getFeeStats(): Promise<rpc.Api.GetFeeStatsResponse>
 }
 
 export function sorobanServer(
@@ -44,6 +45,31 @@ export function sorobanServer(
 
 /** The user has 5 minutes to sign; past that the server prepares a fresh one. */
 export const MINT_TX_TIMEOUT_SECONDS = 300
+
+/** Inclusion fee bounds of the mint, in stroops: 0.001 XLM to 0.1 XLM. */
+export const MINT_INCLUSION_FEE_FLOOR = 10_000
+export const MINT_INCLUSION_FEE_CAP = 1_000_000
+
+/**
+ * The inclusion fee the mint bids, in stroops: the Soroban inclusion fee p90
+ * of the recent ledgers, so it lands under surge pricing, within the floor
+ * and the cap. Unreadable stats fall back to the floor.
+ */
+async function mintInclusionFee(server: SorobanRpcLike): Promise<string> {
+  let p90: number
+  try {
+    p90 = Number((await server.getFeeStats()).sorobanInclusionFee.p90)
+  } catch {
+    return String(MINT_INCLUSION_FEE_FLOOR)
+  }
+  if (!Number.isFinite(p90)) return String(MINT_INCLUSION_FEE_FLOOR)
+  return String(
+    Math.min(
+      MINT_INCLUSION_FEE_CAP,
+      Math.max(MINT_INCLUSION_FEE_FLOOR, Math.ceil(p90))
+    )
+  )
+}
 
 function hexBytes(hex: `0x${string}`): Buffer {
   return Buffer.from(hex.slice(2), 'hex')
@@ -78,8 +104,9 @@ export async function prepareMintXdr(
 ): Promise<string> {
   const server = deps.server ?? sorobanServer(input.rpc)
   const account = await server.getAccount(input.source)
+  // Simulation adds the resource fee on top of this inclusion fee.
   const tx = new TransactionBuilder(account, {
-    fee: BASE_FEE,
+    fee: await mintInclusionFee(server),
     networkPassphrase: input.passphrase,
   })
     .addOperation(
@@ -160,10 +187,19 @@ export function assertSignedMint(
   }
 }
 
-export type MintSubmission =
+/** Where a mint transaction stands on Stellar. */
+export type MintStatus =
   | { status: 'pending'; hash: string }
   | { status: 'success'; hash: string; mintedAmount: bigint | null }
   | { status: 'failed'; hash: string; error: string }
+
+/**
+ * What relaying a signed mint gave. `busy`: the network did not take it
+ * (TRY_AGAIN_LATER, or an inclusion fee below the surge price); it never
+ * reached a ledger, so the user signs a fresh one.
+ */
+export type MintSubmission =
+  MintStatus | { status: 'busy'; hash: string; error: string }
 
 interface MintStatusDeps {
   rpc: SorobanRpcConnection
@@ -200,7 +236,7 @@ export function mintedAmountFromEvents(
 export async function getMintStatus(
   hash: string,
   deps: MintStatusDeps
-): Promise<MintSubmission> {
+): Promise<MintStatus> {
   const server = deps.server ?? sorobanServer(deps.rpc)
   const res = await server.getTransaction(hash)
   if (res.status === 'SUCCESS') {
@@ -245,6 +281,13 @@ export async function submitMint(
   const sent = await server.sendTransaction(tx)
   if (sent.status === 'ERROR') {
     const reason = sent.errorResult?.result().switch().name ?? 'unknown'
+    if (reason === 'txInsufficientFee') {
+      return {
+        status: 'busy',
+        hash: sent.hash,
+        error: `The fee is below the surge price (${reason})`,
+      }
+    }
     return {
       status: 'failed',
       hash: sent.hash,
@@ -253,9 +296,9 @@ export async function submitMint(
   }
   if (sent.status === 'TRY_AGAIN_LATER') {
     return {
-      status: 'failed',
+      status: 'busy',
       hash: sent.hash,
-      error: 'The network is busy, submit again',
+      error: 'The network is busy (TRY_AGAIN_LATER)',
     }
   }
   const wait = deps.sleep ?? sleep

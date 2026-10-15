@@ -128,6 +128,20 @@ describe('preflightFromAccount', () => {
     })
   })
 
+  it('compares the mint fee with the available XLM and asks for that fee plus margin', () => {
+    const a = account('5', {}, [usdcLine('0.0000000', '922337203685.4775807')]) // 3.5 available
+    expect(
+      preflightFromAccount(a, USDC, TWENTY_USDC, 40_000_000n) // 4 XLM fee
+    ).toMatchObject({
+      state: 'insufficient-xlm',
+      availableXlm: '3.5',
+      requiredXlm: '4.1',
+    })
+    expect(
+      preflightFromAccount(a, USDC, TWENTY_USDC, 2_500_000n) // 0.25 XLM fee
+    ).toMatchObject({ state: 'ready', requiredXlm: '0.35' })
+  })
+
   it('counts sponsorships and selling liabilities against the available XLM', () => {
     const a = account('5', { num_sponsoring: 1, num_sponsored: 1 }, [
       usdcLine('0', '1000'),

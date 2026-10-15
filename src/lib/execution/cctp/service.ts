@@ -54,7 +54,11 @@ import {
   isMessageExpired,
   parseCctpMessage,
 } from './message'
-import { MINT_TX_TIMEOUT_SECONDS, type MintSubmission } from './mint'
+import {
+  MINT_TX_TIMEOUT_SECONDS,
+  type MintStatus,
+  type MintSubmission,
+} from './mint'
 import { SignedTxError } from './signed-tx'
 import {
   type HorizonAccount,
@@ -145,11 +149,13 @@ export interface BridgeServiceDeps {
       expected: { source: string; message: Hex; attestation: Hex }
     ): void
     hashOf(signedXdr: string): string
+    /** The full fee of a prepared mint (inclusion + resource), in stroops. */
+    feeOf(xdr: string): bigint
     alreadyReceived(message: Hex): Promise<boolean>
     /** Sequence of the latest Stellar ledger: what a message expiry is compared with. */
     latestLedger(): Promise<number>
     submit(signedXdr: string, recipient: string): Promise<MintSubmission>
-    status(hash: string, recipient: string): Promise<MintSubmission>
+    status(hash: string, recipient: string): Promise<MintStatus>
   }
   now(): number
   log(event: string, data: Record<string, unknown>): void
@@ -182,6 +188,9 @@ const SESSION_MESSAGES: Record<string, string> = {
 }
 
 const GENERIC = 'Something went wrong. Please try again.'
+
+const MINT_BUSY =
+  'The Stellar network is busy. Resume in a minute to sign the mint again.'
 
 const Hash = z.string().regex(/^0x[0-9a-fA-F]{64}$/)
 const Id = z.string().min(1).max(64)
@@ -487,7 +496,7 @@ export function createBridgeService(deps: BridgeServiceDeps) {
 
   async function settleMint(
     t: BridgeTransfer,
-    sub: MintSubmission
+    sub: MintStatus
   ): Promise<BridgeTransfer> {
     if (sub.status === 'pending') return t
     if (sub.status === 'failed')
@@ -766,19 +775,28 @@ export function createBridgeService(deps: BridgeServiceDeps) {
             )
           }
         }
-        assertReady(
-          await preflight(
-            session.address,
-            (t.amount - (t.feeExecuted ?? 0n)) * 10n
-          )
+        const account = await deps.horizonAccount(session.address)
+        const expected = (t.amount - (t.feeExecuted ?? 0n)) * 10n
+        const { usdc } = deps.network
+        assertReady(preflightFromAccount(account, usdc, expected))
+        const xdr = await deps.mint.prepare({
+          source: session.address,
+          message,
+          attestation: t.attestation as Hex,
+        })
+        // The simulation priced the mint: its full fee must fit the XLM left.
+        const funded = preflightFromAccount(
+          account,
+          usdc,
+          expected,
+          deps.mint.feeOf(xdr)
         )
-        return {
-          xdr: await deps.mint.prepare({
-            source: session.address,
-            message,
-            attestation: t.attestation as Hex,
-          }),
-        }
+        if (funded.state !== 'ready')
+          throw new BridgeError(
+            `preflight-${funded.state}`,
+            `${PREFLIGHT_MESSAGES[funded.state]} The mint needs ${funded.requiredXlm} XLM available; your account has ${funded.availableXlm} XLM.`
+          )
+        return { xdr }
       }),
 
     submitBridgeMint: (input: { id: string; signedXdr: string }) =>
@@ -817,6 +835,16 @@ export function createBridgeService(deps: BridgeServiceDeps) {
             })
             return { status: 'pending', hash }
           })
+        if (sub.status === 'busy') {
+          // Never reached a ledger: free the row for a fresh signature.
+          await fail(
+            claimed,
+            ['mint_submitted'],
+            'mint-network-busy',
+            sub.error
+          )
+          throw new BridgeError('mint-network-busy', MINT_BUSY)
+        }
         return view(await settleMint(claimed, sub))
       }),
 

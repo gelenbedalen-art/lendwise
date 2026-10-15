@@ -86,6 +86,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   'message-mismatch':
     'The attested message does not match the burn. Nothing was minted; resume later or contact support.',
   'mint-failed': 'The mint failed on Stellar. Resume to sign it again.',
+  'mint-network-busy':
+    'The Stellar network is busy. Resume in a minute to sign the mint again.',
   'mint-not-found':
     'The mint transaction did not reach Stellar. Resume to sign it again.',
   'minted-amount-mismatch':

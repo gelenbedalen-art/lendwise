@@ -15,6 +15,8 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { cctpConfig } from '../config'
 import {
+  MINT_INCLUSION_FEE_CAP,
+  MINT_INCLUSION_FEE_FLOOR,
   type SorobanRpcLike,
   assertSignedMint,
   getMintStatus,
@@ -121,6 +123,59 @@ function codeOf(x: string, exp = expected): string {
     return e instanceof SignedTxError ? e.code : String(e)
   }
 }
+
+describe('prepareMintXdr inclusion fee', () => {
+  async function feeWith(getFeeStats: () => Promise<unknown>) {
+    const server = {
+      getAccount: vi.fn(async () => new Account(RECIPIENT, '7')),
+      prepareTransaction: vi.fn(async (tx: Transaction) => tx),
+      getFeeStats: vi.fn(getFeeStats),
+    } as unknown as SorobanRpcLike
+    const out = await prepareMintXdr(
+      {
+        source: RECIPIENT,
+        message: MESSAGE,
+        attestation: ATTESTATION,
+        contracts,
+        rpc: RPC,
+        passphrase: Networks.PUBLIC,
+      },
+      { server }
+    )
+    return TransactionBuilder.fromXDR(out, Networks.PUBLIC).fee
+  }
+  const stats = (p90: string) => async () => ({
+    sorobanInclusionFee: { p90 },
+    inclusionFee: { p90: '1' },
+    latestLedger: 1,
+  })
+
+  it('pins the floor at 10 000 stroops and the cap at 1 000 000', () => {
+    expect(MINT_INCLUSION_FEE_FLOOR).toBe(10_000)
+    expect(MINT_INCLUSION_FEE_CAP).toBe(1_000_000)
+  })
+
+  it('bids the Soroban inclusion fee p90', async () => {
+    expect(await feeWith(stats('54321'))).toBe('54321')
+  })
+
+  it('never bids under the floor', async () => {
+    expect(await feeWith(stats('100'))).toBe('10000')
+  })
+
+  it('never bids over the cap, however hot the surge', async () => {
+    expect(await feeWith(stats('25000000'))).toBe('1000000')
+  })
+
+  it('falls back to the floor when the fee stats cannot be read', async () => {
+    expect(
+      await feeWith(async () => {
+        throw new Error('getFeeStats 503')
+      })
+    ).toBe('10000')
+    expect(await feeWith(stats('not a number'))).toBe('10000')
+  })
+})
 
 describe('prepareMintXdr', () => {
   it('builds mint_and_forward on the forwarder from the session account, then simulates it', async () => {
@@ -256,7 +311,13 @@ describe('submitMint and getMintStatus', () => {
     })
   })
 
-  it('reports a rejected or busy submission as failed', async () => {
+  const rejected = (reason: string) => ({
+    status: 'ERROR',
+    hash: 'h4',
+    errorResult: { result: () => ({ switch: () => ({ name: reason }) }) },
+  })
+
+  it('reports a rejected submission as failed', async () => {
     expect(
       (
         await submitMint(
@@ -266,13 +327,23 @@ describe('submitMint and getMintStatus', () => {
       ).status
     ).toBe('failed')
     expect(
-      (
-        await submitMint(
-          mintXdr(),
-          deps(server([], { status: 'TRY_AGAIN_LATER', hash: 'h3' }))
-        )
-      ).status
-    ).toBe('failed')
+      await submitMint(mintXdr(), deps(server([], rejected('txBadSeq'))))
+    ).toMatchObject({ status: 'failed', hash: 'h4' })
+  })
+
+  it('reports a busy network apart, so the mint can be signed again', async () => {
+    expect(
+      await submitMint(
+        mintXdr(),
+        deps(server([], { status: 'TRY_AGAIN_LATER', hash: 'h3' }))
+      )
+    ).toMatchObject({ status: 'busy', hash: 'h3' })
+    expect(
+      await submitMint(
+        mintXdr(),
+        deps(server([], rejected('txInsufficientFee')))
+      )
+    ).toMatchObject({ status: 'busy', hash: 'h4' })
   })
 
   it('reports a transaction that failed on chain', async () => {

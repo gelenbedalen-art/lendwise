@@ -130,6 +130,7 @@ export function bridgeServiceDeps(
         }),
       hashOf: (xdr) =>
         TransactionBuilder.fromXDR(xdr, passphrase).hash().toString('hex'),
+      feeOf: (xdr) => BigInt(TransactionBuilder.fromXDR(xdr, passphrase).fee),
       alreadyReceived: (message) =>
         isMessageAlreadyReceived({
           message,

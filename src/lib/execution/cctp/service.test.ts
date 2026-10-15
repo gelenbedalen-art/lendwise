@@ -246,6 +246,7 @@ function makeDeps(over: Partial<Deps> = {}) {
       prepare: vi.fn<Mint['prepare']>(async () => 'MINT_XDR'),
       check: vi.fn<Mint['check']>(),
       hashOf: vi.fn<Mint['hashOf']>(() => 'ef'.repeat(32)),
+      feeOf: vi.fn<Mint['feeOf']>(() => 150_000n),
       alreadyReceived: vi.fn<Mint['alreadyReceived']>(async () => false),
       latestLedger: vi.fn<Mint['latestLedger']>(async () => LEDGER),
       submit: vi.fn<Mint['submit']>(async () => ({
@@ -799,6 +800,51 @@ describe('mint', () => {
     const t = await attested(seed)
     const r = await service.prepareBridgeMint({ id: t.id })
     expect(r).toMatchObject({ ok: false, code: 'preflight-missing-trustline' })
+  })
+
+  it('refuses to hand over a mint whose full fee the account cannot pay', async () => {
+    const { service, seed, deps } = makeDeps()
+    const t = await attested(seed)
+    // readyAccount: 100 XLM, 3 reserves of 0.5 → 98.5 available.
+    vi.mocked(deps.mint.feeOf).mockReturnValue(990_000_000n) // 99 XLM
+    const r = await service.prepareBridgeMint({ id: t.id })
+    expect(r).toMatchObject({ ok: false, code: 'preflight-insufficient-xlm' })
+    expect(r.ok ? '' : r.error).toMatch(/99\.1 XLM/)
+    expect(deps.mint.feeOf).toHaveBeenCalledWith('MINT_XDR')
+    expect(deps.horizonAccount).toHaveBeenCalledTimes(1)
+  })
+
+  it('maps a busy network to mint-network-busy and keeps the transfer resumable', async () => {
+    const { service, seed, deps, rows } = makeDeps()
+    const t = await attested(seed)
+    vi.mocked(deps.mint.submit).mockResolvedValueOnce({
+      status: 'busy',
+      hash: 'ef'.repeat(32),
+      error: 'The network is busy (TRY_AGAIN_LATER)',
+    })
+    const r = await service.submitBridgeMint({ id: t.id, signedXdr: 'SIGNED' })
+    expect(r).toEqual({
+      ok: false,
+      code: 'mint-network-busy',
+      error:
+        'The Stellar network is busy. Resume in a minute to sign the mint again.',
+    })
+    expect(rows.get(t.id)!.error).toMatch(/^mint-network-busy: /)
+    const [listed] = value(await service.listBridgeTransfers())
+    expect(listed).toMatchObject({
+      status: 'failed',
+      resumable: true,
+      error:
+        'The Stellar network is busy. Resume in a minute to sign the mint again.',
+    })
+
+    expect(value(await service.prepareBridgeMint({ id: t.id }))).toEqual({
+      xdr: 'MINT_XDR',
+    })
+    expect(
+      value(await service.submitBridgeMint({ id: t.id, signedXdr: 'SIGNED' }))
+        .status
+    ).toBe('completed')
   })
 
   it('submits once, stores hash and minted amount, and a second call never resubmits', async () => {

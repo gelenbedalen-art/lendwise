@@ -75,10 +75,17 @@ function fromStroops(stroops: bigint): string {
   return `${stroops / STROOPS}${fraction ? `.${fraction}` : ''}`
 }
 
+/**
+ * Whether the account can receive `expectedStellarAtomic` USDC. With
+ * `mintFeeStroops`, the full fee of the prepared mint (inclusion + resource):
+ * the available XLM must also cover it, and `requiredXlm` is that fee plus
+ * the margin.
+ */
 export function preflightFromAccount(
   account: HorizonAccount | null,
   usdc: Usdc,
-  expectedStellarAtomic: bigint
+  expectedStellarAtomic: bigint,
+  mintFeeStroops?: bigint
 ): PreflightResult {
   if (!account) {
     return {
@@ -118,9 +125,15 @@ export function preflightFromAccount(
   }
 
   const trustline = { balance: line.balance, limit: line.limit ?? '0' }
-  const base = { availableXlm, requiredXlm: fromStroops(FEE_MARGIN), trustline }
+  const fee = mintFeeStroops ?? 0n
+  const base = {
+    availableXlm,
+    requiredXlm: fromStroops(fee + FEE_MARGIN),
+    trustline,
+  }
   if (line.is_authorized === false) return { state: 'not-authorized', ...base }
-  if (available < FEE_MARGIN) return { state: 'insufficient-xlm', ...base }
+  if (available < FEE_MARGIN || available < fee)
+    return { state: 'insufficient-xlm', ...base }
   if (
     toStroops(trustline.limit) - toStroops(trustline.balance) <
     expectedStellarAtomic
