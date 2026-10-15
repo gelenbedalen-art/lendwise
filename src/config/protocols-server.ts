@@ -6,7 +6,10 @@ import type {
   StellarPositionsAdapter,
   YieldAdapter,
 } from '@/lib/protocols/core/types'
-import { fixtureAddress } from '@/lib/protocols/stellar/fixture/config'
+import {
+  fixtureAddress,
+  isStellarYieldFixtureEnabled,
+} from '@/lib/protocols/stellar/fixture/config'
 
 export const YIELD_ADAPTERS: Record<ProtocolName, () => Promise<YieldAdapter>> =
   {
@@ -17,6 +20,28 @@ export const YIELD_ADAPTERS: Record<ProtocolName, () => Promise<YieldAdapter>> =
     'blend_v2.1': () =>
       import('@/lib/protocols/blend/v2_1').then((m) => m.adapter),
   }
+
+/**
+ * The yield adapters the pipeline walks — catalogue sync, spot collector,
+ * reconcile: YIELD_ADAPTERS, plus the Stellar fixture's yield face on a
+ * non-production deployment with STELLAR_YIELD_FIXTURE=1. A function read at
+ * call time, like `stellarPositionAdapters`: the fixture is decided per
+ * environment. The backfill script keeps YIELD_ADAPTERS and never sees it.
+ */
+export function yieldAdapters(
+  env: Record<string, string | undefined> = process.env
+): Record<string, () => Promise<YieldAdapter>> {
+  const adapters: Record<string, () => Promise<YieldAdapter>> = {
+    ...YIELD_ADAPTERS,
+  }
+  if (isStellarYieldFixtureEnabled(env)) {
+    adapters.stellar_fixture = () =>
+      import('@/lib/protocols/stellar/fixture/yield').then(
+        (m) => m.stellarFixtureYieldAdapter
+      )
+  }
+  return adapters
+}
 
 export const APP_ADAPTERS: Partial<
   Record<ProtocolName, () => Promise<AppAdapter>>
