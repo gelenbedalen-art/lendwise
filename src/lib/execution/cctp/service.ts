@@ -104,6 +104,10 @@ export interface BridgeRepository {
 export interface BridgeServiceDeps {
   session(): Promise<ActiveStellarSession>
   limit(address: string): Promise<LimitResult>
+  /** The caller's IP, read from the request headers. */
+  ip(): Promise<string>
+  /** Per-IP limit: a session costs nothing, so the per-address limit alone multiplies with sessions. */
+  limitIp(ip: string): Promise<LimitResult>
   network: StellarNetworkConfig
   cctp: CctpNetworkConfig
   env: Record<string, string | undefined>
@@ -249,11 +253,16 @@ export function createBridgeService(deps: BridgeServiceDeps) {
     return { ok: false, error: GENERIC, code: 'internal' }
   }
 
-  /** Session, then rate limit on the session address, then `fn`. Never throws. */
+  /**
+   * Rate limit on the caller's IP, then session, then rate limit on the
+   * session address, then `fn`. Never throws.
+   */
   async function authed<T>(
     fn: (session: ActiveStellarSession) => Promise<T>
   ): Promise<ActionResult<T>> {
     try {
+      const byIp = await deps.limitIp(await deps.ip())
+      if (!byIp.success) throw new StellarSessionError('rate-limited')
       const session = await deps.session()
       const { success } = await deps.limit(session.address)
       if (!success) throw new StellarSessionError('rate-limited')

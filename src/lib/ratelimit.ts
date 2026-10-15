@@ -87,6 +87,15 @@ export const stellarAuthLimiter = createLimiter(20, 'lw:sep10')
 export const bridgeLimiter = createLimiter(60, 'lw:bridge')
 
 /**
+ * 120 req/min/IP — the same bridge actions, checked before `bridgeLimiter`.
+ * A SEP-10 session costs nothing (an unfunded keypair signs in), so the
+ * per-account limit alone lets one client multiply its budget by minting
+ * sessions. A transfer polls 12 times a minute, so several users behind one
+ * NAT still fit.
+ */
+export const bridgeIpLimiter = createLimiter(120, 'lw:bridge-ip')
+
+/**
  * Client IP from the first hop of `x-forwarded-for`. Falls back to a shared
  * bucket when absent, which is the conservative choice: unattributable traffic
  * gets rate-limited together rather than escaping the limit entirely.

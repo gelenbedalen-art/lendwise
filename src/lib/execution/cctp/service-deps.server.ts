@@ -1,5 +1,7 @@
 import 'server-only'
 
+import { headers } from 'next/headers'
+
 import { Horizon, TransactionBuilder } from '@stellar/stellar-sdk'
 
 import { stellarNetwork } from '@/config/stellar-network'
@@ -10,7 +12,7 @@ import {
 import { requireStellarSession } from '@/lib/auth/session-guard'
 import * as repository from '@/lib/db/repositories/bridge-transfers'
 import { redactRpcSecrets } from '@/lib/evm/redact'
-import { bridgeLimiter } from '@/lib/ratelimit'
+import { bridgeIpLimiter, bridgeLimiter, clientIp } from '@/lib/ratelimit'
 
 import { cctpConfig } from './config'
 import { burnReceiptClient, verifyBurnReceipt } from './evm-receipt'
@@ -49,6 +51,9 @@ export function bridgeServiceDeps(
   return {
     session: () => requireStellarSession(),
     limit: (address) => bridgeLimiter.limit(address),
+    // The server action's request: the bridge actions run only as actions.
+    ip: async () => clientIp(await headers()),
+    limitIp: (ip) => bridgeIpLimiter.limit(ip),
     network,
     cctp,
     env,

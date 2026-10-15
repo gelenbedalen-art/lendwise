@@ -205,6 +205,11 @@ function makeDeps(over: Partial<Deps> = {}) {
       expiresAt: NOW / 1000 + 3600,
     })),
     limit: vi.fn<Deps['limit']>(async () => ({ success: true, retryAfter: 0 })),
+    ip: vi.fn<Deps['ip']>(async () => '203.0.113.7'),
+    limitIp: vi.fn<Deps['limitIp']>(async () => ({
+      success: true,
+      retryAfter: 0,
+    })),
     network: testnet,
     cctp,
     env: {},
@@ -351,6 +356,34 @@ describe('session and rate limit', () => {
     const r = await service.listBridgeTransfers()
     expect(r).toMatchObject({ ok: false, code: 'rate-limited' })
     expect(repo.listTransfers).not.toHaveBeenCalled()
+  })
+
+  it('stops an IP over its limit even when the address is under its own', async () => {
+    const { service, deps, repo } = makeDeps({
+      limitIp: vi.fn(async () => ({ success: false, retryAfter: 30 })),
+    })
+    const r = await service.quoteBridge({
+      sourceChainId: baseSepolia.chainId,
+      amount: '10',
+    })
+    expect(r).toEqual({
+      ok: false,
+      code: 'rate-limited',
+      error: 'Too many requests. Wait a minute and try again.',
+    })
+    expect(deps.limitIp).toHaveBeenCalledWith('203.0.113.7')
+    expect(deps.feeTiers).not.toHaveBeenCalled()
+    expect(repo.listTransfers).not.toHaveBeenCalled()
+  })
+
+  it('checks the IP before reading the session, so sessionless floods count too', async () => {
+    const { service, deps } = makeDeps({
+      limitIp: vi.fn(async () => ({ success: false, retryAfter: 30 })),
+    })
+    const r = await service.listBridgeTransfers()
+    expect(r).toMatchObject({ ok: false, code: 'rate-limited' })
+    expect(deps.session).not.toHaveBeenCalled()
+    expect(deps.limit).not.toHaveBeenCalled()
   })
 })
 
