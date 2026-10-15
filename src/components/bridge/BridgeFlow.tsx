@@ -216,6 +216,12 @@ export function BridgeFlow({
       })
       if (!created.ok) throw new Error(created.error)
       const { transfer: planned, burn } = created.value
+      // The server built the hook for the account of its session cookie: the
+      // wallet signs nothing unless it pays the account on screen. Loaded on
+      // demand, like the Stellar SDK everywhere else on the client.
+      const { checkBurnRecipient } = await import('./burn-recipient')
+      const recipient = checkBurnRecipient(burn.data, session?.address ?? '')
+      if (!recipient.ok) throw new Error(recipient.error)
       setTransfer(planned)
 
       let burned = false
