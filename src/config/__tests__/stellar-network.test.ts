@@ -1,5 +1,5 @@
 import { Asset, Networks } from '@stellar/stellar-sdk'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   STELLAR_NETWORKS,
@@ -85,6 +85,58 @@ describe('server endpoints', () => {
     expect(stellarHorizonUrl({ NEXT_PUBLIC_STELLAR_NETWORK: 'testnet' })).toBe(
       'https://horizon-testnet.stellar.org'
     )
+  })
+
+  const quiet = () => ({ warn: vi.fn(), warned: new Set<string>() })
+
+  it('ignores the mainnet Horizon on testnet and warns once', () => {
+    const log = quiet()
+    const env = {
+      NEXT_PUBLIC_STELLAR_NETWORK: 'testnet',
+      STELLAR_HORIZON_URL: 'https://horizon.stellar.org',
+    }
+    expect(stellarHorizonUrl(env, log)).toBe(
+      'https://horizon-testnet.stellar.org'
+    )
+    expect(stellarHorizonUrl(env, log)).toBe(
+      'https://horizon-testnet.stellar.org'
+    )
+    expect(log.warn).toHaveBeenCalledTimes(1)
+    expect(log.warn.mock.calls[0][0]).toMatch(/STELLAR_HORIZON_URL/)
+  })
+
+  it('ignores the testnet Horizon on mainnet', () => {
+    const log = quiet()
+    expect(
+      stellarHorizonUrl(
+        { STELLAR_HORIZON_URL: 'https://horizon-testnet.stellar.org/' },
+        log
+      )
+    ).toBe('https://horizon.stellar.org')
+    expect(log.warn).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps an override on its own network, or on any other host, silently', () => {
+    const log = quiet()
+    expect(
+      stellarHorizonUrl(
+        { STELLAR_HORIZON_URL: 'https://horizon.stellar.org' },
+        log
+      )
+    ).toBe('https://horizon.stellar.org')
+    expect(
+      stellarHorizonUrl(
+        {
+          NEXT_PUBLIC_STELLAR_NETWORK: 'testnet',
+          STELLAR_HORIZON_URL: 'https://horizon.example/testnet',
+        },
+        log
+      )
+    ).toBe('https://horizon.example/testnet')
+    expect(stellarHorizonUrl({ STELLAR_HORIZON_URL: 'not a url' }, log)).toBe(
+      'not a url'
+    )
+    expect(log.warn).not.toHaveBeenCalled()
   })
 
   it('uses the server RPC on mainnet', () => {
