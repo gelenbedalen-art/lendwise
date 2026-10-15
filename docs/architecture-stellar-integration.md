@@ -370,14 +370,18 @@ flowchart TD
 
 - **Optimizer:** the ranking rule is unchanged — rates from any registered Stellar adapter flow
   into the same `apy_hourly`/`apy_daily` tables every other protocol uses. `src/lib/products/ranking.ts`
-  ranks every row by the same rule and tags it with its chain family, so a Stellar row carries a
-  bridge entry point instead of an EVM action. Covered in CI against a fixture Stellar adapter
-  (`stellar_fixture`), so any Stellar venue registered through the adapter contract is ranked
-  with no further engineering.
-- **Entry points:** the Stellar network filter shows a "Bridge USDC to Stellar" banner, USDC rows
-  carry a "Bridge to Stellar" action, and an optimizer allocation on a Stellar venue links to the
-  bridge with the allocated amount. Links come from one builder (`bridgeHref`): the source chain
-  is only pre-filled when it is a supported CCTP source.
+  ranks every row by the same rule and tags it with its chain family; the family never changes the
+  rank, only what the row's bridge link pre-fills (next bullet). Covered in CI against a fixture
+  Stellar adapter (`stellar_fixture`), so any Stellar venue registered through the adapter
+  contract is ranked with no further engineering.
+- **Entry points:** the Stellar network filter shows a "Bridge USDC to Stellar" banner, and an
+  optimizer allocation on a Stellar venue links to the bridge with the allocated amount. Every
+  USDC row, Stellar or EVM, shows a "Bridge to Stellar" action next to its protocol link
+  (`ProductRowActions`, `bridgeActionFor`); the protocol link stays. On a Stellar USDC row the
+  bridge link carries `product=<productId>`, so the flow can name the venue as the next step. On
+  an EVM USDC row of a supported CCTP source chain it carries `source=<chain>`; on any other EVM
+  row it carries no source rather than a silent default. Links come from one builder
+  (`bridgeHref`).
 - **Monitoring:** `runReconcile()` behind `/api/yield/apy/reconcile` runs generically across every
   registered adapter, over a 7-day sliding window (`RECONCILE_WINDOW_DAYS`). `blend_v2.1` heals
   missing hours through its Hubble-backed `getApyHistory()` (part 2). Each nightly report in
