@@ -43,7 +43,12 @@ import { BridgePreflight } from './BridgePreflight'
 import { BridgeQuoteCard } from './BridgeQuoteCard'
 import { BridgeSteps } from './BridgeSteps'
 import { BridgeTransfersList } from './BridgeTransfersList'
-import { canStartNew } from './steps'
+import {
+  BURN_REPLACED_OR_CANCELLED,
+  burnReceiptOutcome,
+  canStartNew,
+  replacementImportOutcome,
+} from './steps'
 
 type Preflight = PreflightResult & { friendbotUrl: string | null }
 
@@ -281,6 +286,28 @@ export function BridgeFlow({
           chainId: burn.chainId,
           hash,
         })
+        const outcome = burnReceiptOutcome(hash, receipt)
+        if (outcome.kind === 'replaced') {
+          // Sped up or replaced in the wallet: the recorded hash will never
+          // confirm. Follow the replacement under its own hash.
+          setBusy('Your wallet replaced the burn. Looking up the new one…')
+          setPendingBurn({ chainId: burn.chainId, hash: outcome.hash })
+          const imported = replacementImportOutcome(
+            await importBridgeBurn({
+              sourceChainId: burn.chainId,
+              txHash: outcome.hash,
+            })
+          )
+          if (imported.kind === 'error') throw new Error(imported.message)
+          setPendingBurn(null)
+          if (imported.kind === 'adopt') return resume(imported.transfer)
+        }
+        if (outcome.kind !== 'sent') {
+          setPendingBurn(null)
+          setTransfer(null)
+          setFlowError(BURN_REPLACED_OR_CANCELLED)
+          return
+        }
         if (receipt.status !== 'success')
           setFlowError(
             'The burn reverted on the source chain. No USDC left your wallet.'

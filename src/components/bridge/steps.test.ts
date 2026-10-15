@@ -3,12 +3,15 @@ import { describe, expect, it } from 'vitest'
 import type { BridgeTransferView } from '@/lib/execution/cctp/view'
 
 import {
+  BURN_REPLACED_OR_CANCELLED,
   attestationNote,
   bridgeSteps,
+  burnReceiptOutcome,
   canStartNew,
   currentStep,
   elapsedSince,
   formatElapsed,
+  replacementImportOutcome,
 } from './steps'
 
 const view = (over: Partial<BridgeTransferView> = {}): BridgeTransferView => ({
@@ -173,6 +176,73 @@ describe('canStartNew', () => {
   it('stays false when completed but a pending burn is unrecorded', () => {
     expect(canStartNew(view({ status: 'completed' }), pending, null)).toBe(
       false
+    )
+  })
+})
+
+describe('burnReceiptOutcome', () => {
+  const SENT = `0x${'ab'.repeat(32)}` as const
+  const OTHER = `0x${'cd'.repeat(32)}` as const
+
+  it('follows the burn that was sent when the receipt is its own, whatever the case', () => {
+    expect(
+      burnReceiptOutcome(SENT, {
+        transactionHash: SENT.toUpperCase().replace(
+          '0X',
+          '0x'
+        ) as `0x${string}`,
+        status: 'success',
+      })
+    ).toEqual({ kind: 'sent' })
+  })
+
+  it('imports the replacement when the wallet sped up or replaced the burn and it succeeded', () => {
+    expect(
+      burnReceiptOutcome(SENT, { transactionHash: OTHER, status: 'success' })
+    ).toEqual({ kind: 'replaced', hash: OTHER })
+  })
+
+  it('reads a replacement that reverted as a cancel: nothing left the wallet', () => {
+    expect(
+      burnReceiptOutcome(SENT, { transactionHash: OTHER, status: 'reverted' })
+    ).toEqual({ kind: 'cancelled' })
+  })
+})
+
+describe('replacementImportOutcome', () => {
+  it('switches to the transfer the import returns', () => {
+    const t = view({ status: 'burn_confirmed', resumable: true })
+    expect(replacementImportOutcome({ ok: true, value: t })).toEqual({
+      kind: 'adopt',
+      transfer: t,
+    })
+  })
+
+  it.each(['not-a-bridge-burn', 'burn-no-event', 'burn-wrong-contract'])(
+    'reads %s as a cancel: the replacement burned nothing for this bridge',
+    (code) => {
+      expect(
+        replacementImportOutcome({ ok: false, code, error: 'server text' })
+      ).toEqual({ kind: 'cancelled' })
+    }
+  )
+
+  it('surfaces any other refusal, so the replacement can be recorded later', () => {
+    expect(
+      replacementImportOutcome({
+        ok: false,
+        code: 'burn-pending',
+        error: 'This burn is not confirmed yet. Try again in a minute.',
+      })
+    ).toEqual({
+      kind: 'error',
+      message: 'This burn is not confirmed yet. Try again in a minute.',
+    })
+  })
+
+  it('tells the user the burn was replaced or cancelled and no USDC left', () => {
+    expect(BURN_REPLACED_OR_CANCELLED).toBe(
+      'Your burn was replaced or cancelled in your wallet; no USDC left it.'
     )
   })
 })

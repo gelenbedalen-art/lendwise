@@ -81,6 +81,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   'burn-no-event': 'This transaction did not burn USDC through CCTP.',
   'burn-wrong-destination': 'This burn is not addressed to Stellar.',
   'burn-mismatch': 'The burn on chain does not match this transfer.',
+  'burn-not-found':
+    'The source chain never confirmed this burn: your wallet may have sped it up or replaced it. If USDC left your wallet, paste the burn hash shown in your wallet in “Resume from a burn hash”.',
   'message-mismatch':
     'The attested message does not match the burn. Nothing was minted; resume later or contact support.',
   'mint-failed': 'The mint failed on Stellar. Resume to sign it again.',

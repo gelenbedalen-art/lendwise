@@ -25,8 +25,11 @@ import type { HorizonAccount } from './trustline'
 // The repository module imports the DB client; nothing here touches it.
 vi.mock('@/lib/db/postgres', () => ({ db: {} }))
 
-const { createBridgeService, MINT_PENDING_TIMEOUT_MS } =
-  await import('./service')
+const {
+  createBridgeService,
+  MINT_PENDING_TIMEOUT_MS,
+  BURN_NOT_FOUND_TIMEOUT_MS,
+} = await import('./service')
 type Deps = Parameters<typeof createBridgeService>[0]
 
 const G = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN'
@@ -564,6 +567,47 @@ describe('refreshBridgeTransfer — one step per call', () => {
     ).toHaveLength(1)
   })
 
+  it('keeps waiting for a burn receipt up to 30 minutes after the burn was recorded', async () => {
+    const { service, seed, rows } = makeDeps()
+    const t = await seed('burn_submitted', { burnTxHash: BURN })
+    rows.set(t.id, {
+      ...rows.get(t.id)!,
+      updatedAt: new Date(NOW - BURN_NOT_FOUND_TIMEOUT_MS),
+    })
+    const v = value(await service.refreshBridgeTransfer({ id: t.id }))
+    expect(v).toMatchObject({
+      status: 'burn_submitted',
+      hashes: { burn: BURN },
+    })
+  })
+
+  it('fails a burn still not found after 30 minutes, freeing its hash in one guarded write', async () => {
+    const { service, seed, rows, repo } = makeDeps()
+    const t = await seed('burn_submitted', { burnTxHash: BURN })
+    rows.set(t.id, {
+      ...rows.get(t.id)!,
+      updatedAt: new Date(NOW - BURN_NOT_FOUND_TIMEOUT_MS - 1),
+    })
+    const v = value(await service.refreshBridgeTransfer({ id: t.id }))
+    expect(v).toMatchObject({
+      status: 'failed',
+      resumable: false,
+      hashes: { burn: null },
+    })
+    expect(v.error).toMatch(/Resume from a burn hash/)
+    expect(rows.get(t.id)!.burnTxHash).toBeNull()
+    expect(rows.get(t.id)!.error).toBe(
+      `burn-not-found: no receipt (burn ${BURN})`
+    )
+    expect(repo.advanceTransfer).toHaveBeenCalledTimes(1)
+    expect(repo.advanceTransfer).toHaveBeenCalledWith(
+      t.id,
+      ['burn_submitted'],
+      'failed',
+      expect.objectContaining({ burnTxHash: null })
+    )
+  })
+
   it('fails a mint that never lands after the timeout, resumable', async () => {
     const { service, seed, rows } = makeDeps()
     const t = await seed('mint_submitted', {
@@ -887,6 +931,10 @@ describe('secrets', () => {
 
   it('keeps the mint timeout beyond the transaction validity window', () => {
     expect(MINT_PENDING_TIMEOUT_MS).toBe((MINT_TX_TIMEOUT_SECONDS + 30) * 1000)
+  })
+
+  it('gives up on a burn receipt after 30 minutes', () => {
+    expect(BURN_NOT_FOUND_TIMEOUT_MS).toBe(30 * 60 * 1000)
   })
 })
 

@@ -76,6 +76,13 @@ type Hex = `0x${string}`
  */
 export const MINT_PENDING_TIMEOUT_MS = (MINT_TX_TIMEOUT_SECONDS + 30) * 1000
 
+/**
+ * A recorded burn whose receipt the source chain still does not know after
+ * this long was replaced or dropped in the wallet (sped up, cancelled): stop
+ * waiting on its hash. A replacement that did burn is imported by its own hash.
+ */
+export const BURN_NOT_FOUND_TIMEOUT_MS = 30 * 60 * 1000
+
 export interface BridgeRepository {
   insertTransfer(input: NewBridgeTransfer): Promise<BridgeTransfer>
   findTransfer(
@@ -382,7 +389,19 @@ export function createBridgeService(deps: BridgeServiceDeps) {
         return fail(t, ['burn_submitted'], `burn-${err.code}`, err.message)
       throw err
     }
-    if (state.status === 'pending') return t
+    if (state.status === 'pending') {
+      if (deps.now() - t.updatedAt.getTime() <= BURN_NOT_FOUND_TIMEOUT_MS)
+        return t
+      // Free the hash, as for a mismatch: the replacement, if it burned, is
+      // imported under its own hash. This one stays in the error detail.
+      return fail(
+        t,
+        ['burn_submitted'],
+        'burn-not-found',
+        `no receipt (burn ${t.burnTxHash})`,
+        { burnTxHash: null }
+      )
+    }
     const mismatch = burnMismatch(state.burn, chain, session.address, t)
     if (mismatch)
       // Free the hash: the unique index would otherwise keep this burn bound

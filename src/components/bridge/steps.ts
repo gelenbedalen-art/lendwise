@@ -1,5 +1,8 @@
 import type { BridgeTransferStatus } from '@/lib/db/repositories/bridge-transfers'
-import type { BridgeTransferView } from '@/lib/execution/cctp/view'
+import type {
+  ActionResult,
+  BridgeTransferView,
+} from '@/lib/execution/cctp/view'
 
 export type StepKey = 'trustline' | 'approval' | 'burn' | 'attestation' | 'mint'
 export type StepState = 'todo' | 'active' | 'done' | 'failed'
@@ -122,4 +125,56 @@ export function canStartNew(
     transfer.status === 'completed' ||
     (transfer.status === 'failed' && !transfer.resumable)
   )
+}
+
+export const BURN_REPLACED_OR_CANCELLED =
+  'Your burn was replaced or cancelled in your wallet; no USDC left it.'
+
+/**
+ * What the burn's receipt says once the wallet's transaction is mined. A
+ * wallet can speed up or cancel a transaction by sending another one with the
+ * same nonce; the receipt is then the replacement's, under another hash.
+ *
+ *   - `sent`: the receipt of the hash that was sent and recorded.
+ *   - `replaced`: a successful replacement, to import by its own hash.
+ *   - `cancelled`: a replacement that reverted, so nothing was burned.
+ */
+export function burnReceiptOutcome(
+  sentHash: string,
+  receipt: { transactionHash: string; status: 'success' | 'reverted' }
+):
+  | { kind: 'sent' }
+  | { kind: 'replaced'; hash: `0x${string}` }
+  | { kind: 'cancelled' } {
+  if (receipt.transactionHash.toLowerCase() === sentHash.toLowerCase())
+    return { kind: 'sent' }
+  if (receipt.status !== 'success') return { kind: 'cancelled' }
+  return {
+    kind: 'replaced',
+    hash: receipt.transactionHash.toLowerCase() as `0x${string}`,
+  }
+}
+
+/**
+ * Import refusals that mean the replacement burned nothing for this bridge: no
+ * CCTP burn at all (a cancel: `burn-no-event`, `burn-wrong-contract`), or not
+ * a burn to this bridge (`not-a-bridge-burn`).
+ */
+const CANCELLED_IMPORT_CODES = new Set([
+  'not-a-bridge-burn',
+  'burn-no-event',
+  'burn-wrong-contract',
+])
+
+/** What to do with the result of importing a replacement burn. */
+export function replacementImportOutcome(
+  result: ActionResult<BridgeTransferView>
+):
+  | { kind: 'adopt'; transfer: BridgeTransferView }
+  | { kind: 'cancelled' }
+  | { kind: 'error'; message: string } {
+  if (result.ok) return { kind: 'adopt', transfer: result.value }
+  if (result.code && CANCELLED_IMPORT_CODES.has(result.code))
+    return { kind: 'cancelled' }
+  return { kind: 'error', message: result.error }
 }
