@@ -18,6 +18,7 @@ import {
 } from 'viem/chains'
 
 import { serverRpc } from '@/config/rpc.server'
+import { testnetTransport } from '@/config/testnet-rpc'
 
 import { tokenMessengerV2Abi } from './abis'
 import { type CctpSourceChain, STELLAR_CCTP_DOMAIN, cctpConfig } from './config'
@@ -150,8 +151,8 @@ const VIEM_CHAINS: Record<number, Chain> = {
 
 /**
  * Server-side reader for a source chain. Mainnet goes through the server RPC
- * key (`serverRpc`, never the browser key); testnets use viem's public
- * endpoints, which the provider keys do not cover.
+ * key (`serverRpc`, never the browser key); testnets use the public RPCs
+ * of `TESTNET_RPC_URLS`, which the provider keys do not cover.
  */
 export function burnReceiptClient(chain: CctpSourceChain): ReceiptReader {
   const viemChain = VIEM_CHAINS[chain.chainId]
@@ -164,6 +165,6 @@ export function burnReceiptClient(chain: CctpSourceChain): ReceiptReader {
     chain: viemChain,
     transport: rpc
       ? http(rpc.url, { fetchOptions: { headers: rpc.headers } })
-      : http(),
+      : testnetTransport(chain.chainId),
   })
 }
