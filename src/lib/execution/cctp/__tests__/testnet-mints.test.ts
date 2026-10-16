@@ -17,15 +17,19 @@ import {
   parseCctpMessage,
 } from '../message'
 import { mintedAmountFromEvents } from '../mint'
+import appNewUser from './fixtures/testnet-app-base-sepolia-new-user.json'
+import appReturningUser from './fixtures/testnet-app-ethereum-sepolia-returning-user.json'
 import fast from './fixtures/testnet-mint-arbitrum-sepolia-fast.json'
 import standard from './fixtures/testnet-mint-ethereum-sepolia-standard.json'
 
 /**
- * Two real Stellar testnet mints by Circle's CCTP forwarder (third-party
- * transfers, not LendWise ones): the message and attestation are the
+ * Real Stellar testnet mints by Circle's CCTP forwarder: two third-party
+ * transfers, and the first two LendWise transfers made from
+ * testnet.lendwise.fi. In each, the message and attestation are the
  * `mint_and_forward` arguments, `iris` is what Circle's Iris sandbox served for
- * the same nonce, and the events are the mint transaction's. Circle's decoder
- * and the chain are the references; nothing here comes from our own encoder.
+ * the same transfer, and the events are the mint transaction's. Circle's
+ * decoder and the chain are the references; nothing here comes from our own
+ * encoder.
  */
 type MintFixture = typeof fast
 
@@ -55,6 +59,8 @@ function forwardEvent(fixture: MintFixture) {
 describe.each([
   ['Arbitrum Sepolia, Fast', fast],
   ['Ethereum Sepolia, Standard', standard],
+  ['LendWise, Base Sepolia, Fast, new user', appNewUser],
+  ['LendWise, Ethereum Sepolia, Fast, returning user', appReturningUser],
 ] as const)('a real testnet mint (%s)', (_, fixture: MintFixture) => {
   const msg = parseCctpMessage(fixture.message as Hex)
   const circle = fixture.iris.decodedMessage
