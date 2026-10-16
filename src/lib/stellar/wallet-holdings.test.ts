@@ -129,11 +129,11 @@ describe('getStellarWalletHoldings on a testnet deployment', () => {
     'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5'
 
   afterEach(() => {
-    delete process.env.NEXT_PUBLIC_STELLAR_NETWORK
+    delete process.env.NEXT_PUBLIC_NETWORK
   })
 
   it('reads testnet Horizon and prices Circle testnet USDC as USDC', async () => {
-    process.env.NEXT_PUBLIC_STELLAR_NETWORK = 'testnet'
+    process.env.NEXT_PUBLIC_NETWORK = 'testnet'
     const fetchImpl = vi.fn(
       async () =>
         new Response(

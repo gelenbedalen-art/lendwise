@@ -327,7 +327,7 @@ describe('stellar session token', () => {
 
 describe('stellar SEP-10 on a testnet deployment', () => {
   beforeEach(() => {
-    process.env.NEXT_PUBLIC_STELLAR_NETWORK = 'testnet'
+    process.env.NEXT_PUBLIC_NETWORK = 'testnet'
   })
 
   it('issues the challenge on testnet', async () => {

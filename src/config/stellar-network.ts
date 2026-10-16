@@ -2,8 +2,10 @@
  * The Stellar network of this deployment, for everything a user signs or
  * holds: SEP-10, the wallet kit, Horizon reads, the CCTP bridge.
  *
- * One switch per deployment — `NEXT_PUBLIC_STELLAR_NETWORK=testnet` on the
- * testnet staging only. Production is mainnet whatever the variable says.
+ * One switch per deployment, `NEXT_PUBLIC_NETWORK` (`mainnet` or `testnet`).
+ * Production is mainnet whatever the variable says. A preview without a valid
+ * value runs on testnet, so a preview missing the variable never signs on
+ * mainnet; anywhere else (local dev, CI) the default is mainnet.
  * Market data (Blend spot, Hubble history, Blend positions) never reads this:
  * it is pubnet data, see blend/common/api.ts.
  *
@@ -13,7 +15,7 @@
 export type StellarNetworkId = 'mainnet' | 'testnet'
 
 export interface StellarNetworkEnv {
-  NEXT_PUBLIC_STELLAR_NETWORK?: string
+  NEXT_PUBLIC_NETWORK?: string
   VERCEL_ENV?: string
   NEXT_PUBLIC_VERCEL_ENV?: string
 }
@@ -62,7 +64,7 @@ export const STELLAR_NETWORKS: Record<StellarNetworkId, StellarNetworkConfig> =
 // browser bundle, and tests can set them after import.
 function processEnv(): StellarNetworkEnv {
   return {
-    NEXT_PUBLIC_STELLAR_NETWORK: process.env.NEXT_PUBLIC_STELLAR_NETWORK,
+    NEXT_PUBLIC_NETWORK: process.env.NEXT_PUBLIC_NETWORK,
     VERCEL_ENV: process.env.VERCEL_ENV,
     NEXT_PUBLIC_VERCEL_ENV: process.env.NEXT_PUBLIC_VERCEL_ENV,
   }
@@ -77,7 +79,10 @@ export function stellarNetworkId(
   ) {
     return 'mainnet'
   }
-  return env.NEXT_PUBLIC_STELLAR_NETWORK?.trim() === 'testnet'
+  const value = env.NEXT_PUBLIC_NETWORK?.trim()
+  if (value === 'mainnet' || value === 'testnet') return value
+  return env.VERCEL_ENV === 'preview' ||
+    env.NEXT_PUBLIC_VERCEL_ENV === 'preview'
     ? 'testnet'
     : 'mainnet'
 }

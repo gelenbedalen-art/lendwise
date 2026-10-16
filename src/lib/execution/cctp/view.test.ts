@@ -9,7 +9,7 @@ vi.mock('@/lib/db/postgres', () => ({ db: {} }))
 
 const { toView, transferErrorMessage } = await import('./view')
 
-const network = stellarNetwork({ NEXT_PUBLIC_STELLAR_NETWORK: 'testnet' })
+const network = stellarNetwork({ NEXT_PUBLIC_NETWORK: 'testnet' })
 const cctp = cctpConfig('testnet')
 
 const row = (over: Partial<BridgeTransfer> = {}): BridgeTransfer => ({

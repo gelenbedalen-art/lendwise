@@ -43,7 +43,7 @@ const LEDGER = 60_000_000
 /** A stored, attested message: what Iris returned and the service verified. */
 const MESSAGE = buildMessage()
 
-const testnet = stellarNetwork({ NEXT_PUBLIC_STELLAR_NETWORK: 'testnet' })
+const testnet = stellarNetwork({ NEXT_PUBLIC_NETWORK: 'testnet' })
 const cctp = cctpConfig('testnet')
 const baseSepolia = cctp.sourceChains.find((c) => c.slug === 'base')!
 const forwarder32 = contractIdToBytes32(cctp.stellar.forwarder)

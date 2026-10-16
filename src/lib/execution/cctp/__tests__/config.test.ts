@@ -139,9 +139,9 @@ describe('cctpConfig', () => {
   })
 
   it('follows the deployment network when none is given', () => {
-    vi.stubEnv('NEXT_PUBLIC_STELLAR_NETWORK', 'testnet')
+    vi.stubEnv('NEXT_PUBLIC_NETWORK', 'testnet')
     expect(cctpConfig().network).toBe('testnet')
-    vi.stubEnv('NEXT_PUBLIC_STELLAR_NETWORK', 'mainnet')
+    vi.stubEnv('NEXT_PUBLIC_NETWORK', 'mainnet')
     expect(cctpConfig().network).toBe('mainnet')
   })
 

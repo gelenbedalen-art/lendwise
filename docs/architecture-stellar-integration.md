@@ -334,10 +334,10 @@ flowchart TD
 - **Protocol-independent.** The flow ends with native USDC in the wallet and in the unified
   portfolio. Supplying it to Blend — or to any venue integrated through the adapter contract — is
   the user's next step; the bridge holds no protocol code.
-- **Testnet mode.** One switch per deployment (`NEXT_PUBLIC_STELLAR_NETWORK`,
+- **Testnet mode.** One switch per deployment (`NEXT_PUBLIC_NETWORK`,
   `src/config/stellar-network.ts`) moves SEP-10, the wallet kit, Horizon, Soroban RPC, the CCTP
-  contracts, Iris and the EVM chains to testnet on a dedicated staging; production is always
-  mainnet.
+  contracts, Iris and the EVM chains to testnet. Every preview runs on testnet unless the variable
+  says `mainnet` (testnet.lendwise.fi is the testnet staging); production is always mainnet.
 
 ---
 

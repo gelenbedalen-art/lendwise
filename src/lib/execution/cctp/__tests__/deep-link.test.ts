@@ -52,7 +52,7 @@ describe('bridgeHref', () => {
     for (const slug of ['lido', 'etherfi', 'horizon', 'stellar', 'polygon']) {
       expect(query(bridgeHref({ sourceSlug: slug })).has('source')).toBe(false)
     }
-    vi.stubEnv('NEXT_PUBLIC_STELLAR_NETWORK', 'testnet')
+    vi.stubEnv('NEXT_PUBLIC_NETWORK', 'testnet')
     expect(query(bridgeHref({ sourceSlug: 'optimism' })).has('source')).toBe(
       false
     )
