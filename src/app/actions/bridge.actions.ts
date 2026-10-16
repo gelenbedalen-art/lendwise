@@ -17,7 +17,7 @@ export async function quoteBridge(input: {
   return bridge().quoteBridge(input)
 }
 
-export async function preflightBridge(input: { amount: string }) {
+export async function preflightBridge(input: { amount?: string }) {
   return bridge().preflightBridge(input)
 }
 

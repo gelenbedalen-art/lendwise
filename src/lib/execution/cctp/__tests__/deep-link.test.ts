@@ -86,7 +86,18 @@ describe('parseBridgeParams', () => {
       source: 'lido',
       product: 'p'.repeat(201),
     })
-    expect(p).toEqual({ amount: null, source: null, productId: null })
+    expect(p).toEqual({
+      amount: null,
+      amountInvalid: true,
+      source: null,
+      productId: null,
+    })
+  })
+
+  it('flags an amount it could not read, never a missing one', () => {
+    expect(parseBridgeParams({ amount: '1,5' }).amountInvalid).toBe(true)
+    expect(parseBridgeParams({}).amountInvalid).toBe(false)
+    expect(parseBridgeParams({ amount: '25' }).amountInvalid).toBe(false)
   })
 
   it('takes the first value of a repeated parameter', () => {

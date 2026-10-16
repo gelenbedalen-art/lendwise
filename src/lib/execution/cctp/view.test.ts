@@ -72,6 +72,16 @@ describe('toView tier', () => {
   })
 })
 
+describe('toView evmAddress', () => {
+  it('carries the account that burned, and null before the burn is verified', () => {
+    const burner = '0xe6ebff6b69a58cfba089deb1c47a4dc87c83fbcc'
+    expect(toView(row({ evmAddress: burner }), cctp, network).evmAddress).toBe(
+      burner
+    )
+    expect(toView(row(), cctp, network).evmAddress).toBeNull()
+  })
+})
+
 describe('transferErrorMessage', () => {
   it('promises nothing nobody does on a minted amount mismatch', () => {
     expect(

@@ -53,6 +53,8 @@ export function parseBridgeParams(
   sp: Record<string, string | string[] | undefined>
 ): {
   amount: string | null
+  /** An `amount` was in the link but could not be read: the page says so. */
+  amountInvalid: boolean
   source: CctpSourceChain | null
   productId: string | null
 } {
@@ -69,6 +71,7 @@ export function parseBridgeParams(
   const product = first(sp.product)?.trim()
   return {
     amount,
+    amountInvalid: Boolean(rawAmount) && amount === null,
     source: slug ? cctpSourceChainBySlug(slug) : null,
     productId:
       product && product.length <= MAX_PRODUCT_ID_LENGTH ? product : null,

@@ -29,6 +29,8 @@ export interface BridgeTransferView {
   /** The tier Circle attested with; null until attested. Fast then Standard means a fallback. */
   tierExecuted: BridgeTier | null
   sourceChainId: number
+  /** The EVM account that burned (lowercase), once the burn is verified; null before. */
+  evmAddress: string | null
   amount: string
   maxFee: string
   feeExecuted: string | null
@@ -123,6 +125,7 @@ export function toView(
         ? null
         : tierOf(t.finalityThresholdExecuted),
     sourceChainId: t.sourceChainId,
+    evmAddress: t.evmAddress,
     amount: formatUsdcAmount(t.amount),
     maxFee: formatUsdcAmount(t.maxFee),
     feeExecuted:

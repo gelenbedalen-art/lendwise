@@ -413,6 +413,8 @@ describe('kill switch (CCTP_BRIDGE_ENABLED)', () => {
     expect(value(await service.preflightBridge({ amount: '10' })).state).toBe(
       'ready'
     )
+    // Without an amount: the account alone, for the balance on screen.
+    expect(value(await service.preflightBridge({})).state).toBe('ready')
     expect(value(await service.prepareBridgeMint({ id: t.id }))).toEqual({
       xdr: 'MINT_XDR',
     })
