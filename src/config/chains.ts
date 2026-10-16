@@ -22,6 +22,7 @@ import {
 import { isRpcProvider, rpcUrl } from '@/config/rpc-providers'
 import type { RpcNetwork, RpcProvider } from '@/config/rpc-providers'
 import type { StellarNetworkId } from '@/config/stellar-network'
+import { testnetTransport } from '@/config/testnet-rpc'
 import type { RegisteredChainId } from '@/lib/protocols/core/toolkit'
 
 /**
@@ -148,8 +149,8 @@ export const CHAIN_TRANSPORTS = Object.fromEntries(
 
 /**
  * Source chains of the CCTP bridge on the testnet staging. Wallet-only: no
- * adapter reads them and `isTxSupported` stays false for them. Public RPCs —
- * the provider keys are never sent to a testnet host.
+ * adapter reads them and `isTxSupported` stays false for them. Public RPCs
+ * (`TESTNET_RPC_URLS`): the provider keys are never sent to a testnet host.
  */
 export const BRIDGE_TESTNET_CHAINS = [
   sepolia,
@@ -169,7 +170,9 @@ export function walletChains(network: StellarNetworkId): {
     chains: [...ALL_CHAINS, ...BRIDGE_TESTNET_CHAINS],
     transports: {
       ...CHAIN_TRANSPORTS,
-      ...Object.fromEntries(BRIDGE_TESTNET_CHAINS.map((c) => [c.id, http()])),
+      ...Object.fromEntries(
+        BRIDGE_TESTNET_CHAINS.map((c) => [c.id, testnetTransport(c.id)])
+      ),
     },
   }
 }
