@@ -5,7 +5,11 @@ import { describe, expect, it } from 'vitest'
 import { STELLAR_NETWORKS } from '@/config/stellar-network'
 
 import { STELLAR_CCTP_DOMAIN, cctpConfig } from '../config'
-import { contractIdToBytes32, decodeForwarderHookData } from '../hook'
+import {
+  contractIdToBytes32,
+  decodeForwarderHookData,
+  encodeForwarderHookData,
+} from '../hook'
 import {
   CctpMessageMismatch,
   assertExpectedMessage,
@@ -97,6 +101,12 @@ describe.each([
   it('decodes the hook to the account the forwarder paid', () => {
     expect(decodeForwarderHookData(msg.body.hookData as Hex).recipient).toBe(
       forwarded.forward_recipient
+    )
+  })
+
+  it('carries the hook our burn would build for that account', () => {
+    expect(encodeForwarderHookData(forwarded.forward_recipient)).toBe(
+      msg.body.hookData
     )
   })
 
