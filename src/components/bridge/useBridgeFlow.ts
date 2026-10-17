@@ -33,9 +33,11 @@ import { cctpConfig, evmTxUrl } from '@/lib/execution/cctp/config'
 import type { PreflightResult } from '@/lib/execution/cctp/trustline'
 import type { BridgeQuote, BridgeTransferView } from '@/lib/execution/cctp/view'
 import { requestPortfolioRefresh } from '@/lib/portfolio/refresh-event'
+import { currentStellarSession } from '@/lib/wallet/stellar-wallets'
 import { useWalletStore } from '@/stores/walletStore'
 
 import { isUsdcAmount } from './amount-view'
+import { type TransferList, transfersOf } from './history'
 import {
   BURN_REPLACED_OR_CANCELLED,
   EVM_ACCOUNT_CHANGED,
@@ -49,9 +51,6 @@ import {
 export type Preflight = PreflightResult & { friendbotUrl: string | null }
 
 const QUOTE_DEBOUNCE_MS = 400
-
-/** One empty list, so `transfers` keeps its identity while there is none to show. */
-const NO_TRANSFERS: BridgeTransferView[] = []
 
 /** viem/wagmi errors carry a one-line `shortMessage`; their `message` is a page long. */
 function readable(err: unknown): string {
@@ -89,17 +88,9 @@ export function useBridgeFlow({
   const { wallets } = useWalletStore()
   const chains = useMemo(() => cctpConfig(network).sourceChains, [network])
 
-  // The recipient is always the signed-in Stellar account (SEP-10 session).
-  const session = useMemo(
-    () =>
-      wallets.find(
-        (w) =>
-          w.chainFamily === 'stellar' &&
-          w.stellarSession &&
-          w.stellarSession.expiresAt * 1000 > Date.now()
-      )?.stellarSession ?? null,
-    [wallets]
-  )
+  // The recipient is always the signed-in Stellar account (SEP-10 session):
+  // the newest one, which the server cookie holds.
+  const session = useMemo(() => currentStellarSession(wallets), [wallets])
   const sessionAddress = session?.address ?? null
 
   // No silent fallback: without a valid `source` the user must choose.
@@ -118,10 +109,9 @@ export function useBridgeFlow({
   const [changeTrustHash, setChangeTrustHash] = useState<string | null>(null)
   // Tagged with the account it was listed for: after an account switch, the
   // previous account's transfers never show, even when their response lands late.
-  const [transferList, setTransferList] = useState<{
-    owner: string
-    list: BridgeTransferView[]
-  } | null>(null)
+  const [transferList, setTransferList] = useState<TransferList | null>(null)
+  // Only the newest list request may write: responses can land out of order.
+  const listRequest = useRef(0)
   const [busy, setBusy] = useState<string | null>(null)
   const [flowError, setFlowError] = useState<string | null>(null)
   // A burn the wallet sent that the server has not recorded yet. While set, no
@@ -215,12 +205,13 @@ export function useBridgeFlow({
   }, [enabled, sessionAddress, amount, sourceChainId, hasTransfer, checkTick])
 
   const reloadTransfers = useCallback(async () => {
+    const request = ++listRequest.current
     if (!sessionAddress) return setTransferList(null)
     const r = await listBridgeTransfers()
-    if (r.ok) setTransferList({ owner: sessionAddress, list: r.value })
+    if (r.ok && request === listRequest.current)
+      setTransferList({ owner: sessionAddress, list: r.value })
   }, [sessionAddress])
-  const transfers =
-    transferList?.owner === sessionAddress ? transferList.list : NO_TRANSFERS
+  const transfers = transfersOf(transferList, sessionAddress)
 
   // The session's transfers, reloaded whenever the one on screen changes state.
   useEffect(() => {

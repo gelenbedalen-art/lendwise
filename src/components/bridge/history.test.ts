@@ -8,6 +8,7 @@ import {
   isHistoryTruncated,
   orderTransfers,
   resumeNotice,
+  transfersOf,
 } from './history'
 
 function view(over: Partial<BridgeTransferView> = {}): BridgeTransferView {
@@ -92,7 +93,7 @@ describe('resumeNotice', () => {
       createdAt: '2026-10-16T09:00:00Z',
     })
     const done = view({ id: 'done', createdAt: '2026-10-18T09:00:00Z' })
-    const notice = resumeNotice([openOld, done, stopped, openNew])
+    const notice = resumeNotice([openOld, openNew, done, stopped])
     expect(notice?.transfer.id).toBe('open-new')
     expect(notice?.others).toBe(2)
     expect(resumeNotice([openOld])).toEqual({ transfer: openOld, others: 0 })
@@ -115,6 +116,16 @@ describe('resumeNotice', () => {
     ]
     resumeNotice(list)
     expect(list.map((t) => t.id)).toEqual(['a', 'b'])
+  })
+})
+
+describe('transfersOf', () => {
+  it('shows a list only to the account it was listed for', () => {
+    const list = [view({ id: 'a' })]
+    expect(transfersOf({ owner: 'GAAA', list }, 'GAAA')).toBe(list)
+    expect(transfersOf({ owner: 'GAAA', list }, 'GBBB')).toEqual([])
+    expect(transfersOf({ owner: 'GAAA', list }, null)).toEqual([])
+    expect(transfersOf(null, 'GAAA')).toEqual([])
   })
 })
 

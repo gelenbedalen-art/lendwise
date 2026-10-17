@@ -342,13 +342,18 @@ export function StellarWalletProvider({
       updateWallet(address, newWallet)
       identifyWallet({ address, chainFamily: 'stellar' })
 
-      // Deselect other active wallets
+      // Deselect other active wallets. The server holds one session cookie,
+      // so signing in signs every other Stellar wallet out, as the restore does.
       const allWallets = useWalletStore.getState().wallets
       allWallets.forEach((w) => {
         if (w.address !== address) {
           updateWallet(w.address, {
             isActive: false,
             isCurrentlyConnected: false,
+            ...(w.chainFamily === 'stellar' && {
+              isConnected: false,
+              stellarSession: undefined,
+            }),
           })
         }
       })

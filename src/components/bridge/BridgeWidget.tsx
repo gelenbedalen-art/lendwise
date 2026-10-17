@@ -126,9 +126,12 @@ export function BridgeWidget({
   const pendingBurn = flow.pendingBurn
     ? { hash: flow.pendingBurn.hash, url: flow.pendingBurnUrl }
     : null
-  // Above the form only: with a transfer on screen, the dot on 🕘 says the rest.
+  // Above the form only: with a transfer on screen, the dot on 🕘 says the
+  // rest; with an unrecorded burn, recording it comes first.
   const notice =
-    stellarAddress && !transfer ? resumeNotice(flow.transfers) : null
+    stellarAddress && !transfer && !flow.pendingBurn
+      ? resumeNotice(flow.transfers)
+      : null
   const noticeChainName = notice
     ? (flow.chains.find((c) => c.chainId === notice.transfer.sourceChainId)
         ?.name ?? `Chain ${notice.transfer.sourceChainId}`)
