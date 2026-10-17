@@ -23,9 +23,10 @@ import { parseUsdcAmount } from '@/lib/execution/cctp/amounts'
 import { BridgeForm } from './BridgeForm'
 import { BridgeHistoryDialog } from './BridgeHistoryDialog'
 import { BridgeProgress } from './BridgeProgress'
+import { ResumeNotice } from './ResumeNotice'
 import { stellarUsdcBalance } from './amount-view'
 import { formCta, progressCta, visibleMessage } from './cta'
-import { hasOtherResumable } from './history'
+import { hasOtherResumable, resumeNotice } from './history'
 import { STATUS_TEXT } from './steps'
 import { useBridgeFlow } from './useBridgeFlow'
 import { useUsdcBalances } from './useUsdcBalances'
@@ -125,6 +126,13 @@ export function BridgeWidget({
   const pendingBurn = flow.pendingBurn
     ? { hash: flow.pendingBurn.hash, url: flow.pendingBurnUrl }
     : null
+  // Above the form only: with a transfer on screen, the dot on 🕘 says the rest.
+  const notice =
+    stellarAddress && !transfer ? resumeNotice(flow.transfers) : null
+  const noticeChainName = notice
+    ? (flow.chains.find((c) => c.chainId === notice.transfer.sourceChainId)
+        ?.name ?? `Chain ${notice.transfer.sourceChainId}`)
+    : ''
 
   // Balances move with each burn: read them again once one confirms, and
   // whenever the form comes back. Never without a wallet: `refetch` ignores
@@ -266,6 +274,19 @@ export function BridgeWidget({
             onClick={openHistory}
           />
         </header>
+
+        {notice && (
+          <div className="px-5 pb-3">
+            <ResumeNotice
+              transfer={notice.transfer}
+              chainName={noticeChainName}
+              others={notice.others}
+              busy={flow.busy !== null}
+              onResume={() => flow.actions.resume(notice.transfer)}
+              onShowAll={openHistory}
+            />
+          </div>
+        )}
 
         {transfer && stellarAddress && progressButton ? (
           <BridgeProgress

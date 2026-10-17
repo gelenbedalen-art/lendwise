@@ -36,6 +36,18 @@ export function hasOtherResumable(
   return transfers.some((t) => t.resumable && t.id !== currentId)
 }
 
+/**
+ * The banner above the form: the newest resumable transfer, and how many other
+ * resumable ones wait in the transfers window. Null when none.
+ */
+export function resumeNotice(
+  transfers: readonly BridgeTransferView[]
+): { transfer: BridgeTransferView; others: number } | null {
+  const waiting = transfers.filter((t) => t.resumable).sort(newestFirst)
+  if (waiting.length === 0) return null
+  return { transfer: waiting[0], others: waiting.length - 1 }
+}
+
 /** The server returned as many transfers as it can: older ones are not listed. */
 export function isHistoryTruncated(
   transfers: readonly BridgeTransferView[]

@@ -7,6 +7,7 @@ import {
   hasOtherResumable,
   isHistoryTruncated,
   orderTransfers,
+  resumeNotice,
 } from './history'
 
 function view(over: Partial<BridgeTransferView> = {}): BridgeTransferView {
@@ -67,6 +68,53 @@ describe('hasOtherResumable', () => {
     expect(hasOtherResumable([open], null)).toBe(true)
     expect(hasOtherResumable([open], 'other')).toBe(true)
     expect(hasOtherResumable([view({ id: 'done' })], null)).toBe(false)
+  })
+})
+
+describe('resumeNotice', () => {
+  it('offers the newest resumable transfer and counts the other ones', () => {
+    const openOld = view({
+      id: 'open-old',
+      status: 'attested',
+      resumable: true,
+      createdAt: '2026-10-15T09:00:00Z',
+    })
+    const openNew = view({
+      id: 'open-new',
+      status: 'burn_confirmed',
+      resumable: true,
+      createdAt: '2026-10-17T09:00:00Z',
+    })
+    const stopped = view({
+      id: 'stopped',
+      status: 'failed',
+      resumable: true,
+      createdAt: '2026-10-16T09:00:00Z',
+    })
+    const done = view({ id: 'done', createdAt: '2026-10-18T09:00:00Z' })
+    const notice = resumeNotice([openOld, done, stopped, openNew])
+    expect(notice?.transfer.id).toBe('open-new')
+    expect(notice?.others).toBe(2)
+    expect(resumeNotice([openOld])).toEqual({ transfer: openOld, others: 0 })
+  })
+
+  it('offers nothing without a resumable transfer', () => {
+    expect(resumeNotice([])).toBeNull()
+    expect(
+      resumeNotice([
+        view({ id: 'done' }),
+        view({ id: 'planned', status: 'planned' }),
+      ])
+    ).toBeNull()
+  })
+
+  it('does not reorder the list it was given', () => {
+    const list = [
+      view({ id: 'a', resumable: true, createdAt: '2026-10-15T09:00:00Z' }),
+      view({ id: 'b', resumable: true, createdAt: '2026-10-17T09:00:00Z' }),
+    ]
+    resumeNotice(list)
+    expect(list.map((t) => t.id)).toEqual(['a', 'b'])
   })
 })
 

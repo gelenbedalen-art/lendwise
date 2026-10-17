@@ -50,6 +50,9 @@ export type Preflight = PreflightResult & { friendbotUrl: string | null }
 
 const QUOTE_DEBOUNCE_MS = 400
 
+/** One empty list, so `transfers` keeps its identity while there is none to show. */
+const NO_TRANSFERS: BridgeTransferView[] = []
+
 /** viem/wagmi errors carry a one-line `shortMessage`; their `message` is a page long. */
 function readable(err: unknown): string {
   const short = (err as { shortMessage?: unknown } | null)?.shortMessage
@@ -113,7 +116,12 @@ export function useBridgeFlow({
   // Bumped to run the quote and the account check again.
   const [checkTick, setCheckTick] = useState(0)
   const [changeTrustHash, setChangeTrustHash] = useState<string | null>(null)
-  const [transfers, setTransfers] = useState<BridgeTransferView[]>([])
+  // Tagged with the account it was listed for: after an account switch, the
+  // previous account's transfers never show, even when their response lands late.
+  const [transferList, setTransferList] = useState<{
+    owner: string
+    list: BridgeTransferView[]
+  } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [flowError, setFlowError] = useState<string | null>(null)
   // A burn the wallet sent that the server has not recorded yet. While set, no
@@ -207,10 +215,12 @@ export function useBridgeFlow({
   }, [enabled, sessionAddress, amount, sourceChainId, hasTransfer, checkTick])
 
   const reloadTransfers = useCallback(async () => {
-    if (!sessionAddress) return setTransfers([])
+    if (!sessionAddress) return setTransferList(null)
     const r = await listBridgeTransfers()
-    if (r.ok) setTransfers(r.value)
+    if (r.ok) setTransferList({ owner: sessionAddress, list: r.value })
   }, [sessionAddress])
+  const transfers =
+    transferList?.owner === sessionAddress ? transferList.list : NO_TRANSFERS
 
   // The session's transfers, reloaded whenever the one on screen changes state.
   useEffect(() => {
