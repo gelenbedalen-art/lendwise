@@ -1,1 +1,1 @@
-export { BridgeFlow } from './BridgeFlow'
+export { BridgeWidget } from './BridgeWidget'

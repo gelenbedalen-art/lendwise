@@ -1,7 +1,8 @@
-import { BridgeFlow } from '@/components/bridge'
+import { BridgeWidget } from '@/components/bridge'
 import { protocolDisplayName } from '@/config/protocols-meta'
 import { stellarNetworkId } from '@/config/stellar-network'
 import { findProductById } from '@/lib/db/repositories/products'
+import { formatUsdcAmount, maxBridgeAmount } from '@/lib/execution/cctp/amounts'
 import { parseBridgeParams } from '@/lib/execution/cctp/deep-link'
 import { isBridgeEnabled } from '@/lib/execution/cctp/kill-switch'
 import { adapterId, productLink } from '@/lib/products/from-catalogue'
@@ -40,12 +41,15 @@ export default async function BridgeStellarPage({
   // Read per request: awaiting `searchParams` makes this page dynamic.
   const params = parseBridgeParams(await searchParams)
   const network = stellarNetworkId()
+  const cap = maxBridgeAmount(network, process.env)
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-8">
-      <BridgeFlow
+    <div className="mx-auto w-full max-w-[480px] px-4 py-8">
+      <BridgeWidget
         network={network}
         enabled={isBridgeEnabled(network, process.env)}
+        cap={cap === null ? null : formatUsdcAmount(cap)}
         initialAmount={params.amount}
+        linkAmountInvalid={params.amountInvalid}
         initialSourceChainId={params.source?.chainId ?? null}
         productId={params.productId}
         nextStep={await resolveNextStep(params.productId)}
