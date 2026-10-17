@@ -11,6 +11,7 @@ import {
   canRetry,
   formCta,
   progressCta,
+  visibleMessage,
 } from './cta'
 
 const quote: BridgeQuote = {
@@ -448,5 +449,59 @@ describe('canMint and canRetry', () => {
     expect(
       canRetry(view({ status: 'failed', resumable: false, feeExecuted: null }))
     ).toBe(false)
+  })
+})
+
+describe('visibleMessage', () => {
+  const none = {
+    flowError: null,
+    checkError: null,
+    warning: null,
+    inTransfer: false,
+  }
+  it('returns null when there is nothing to show', () => {
+    expect(visibleMessage(none)).toBeNull()
+  })
+  it('shows each message alone', () => {
+    expect(visibleMessage({ ...none, flowError: 'f' })).toEqual({
+      kind: 'error',
+      text: 'f',
+    })
+    expect(visibleMessage({ ...none, checkError: 'c' })).toEqual({
+      kind: 'check',
+      text: 'c',
+    })
+    expect(visibleMessage({ ...none, warning: 'w' })).toEqual({
+      kind: 'warning',
+      text: 'w',
+    })
+  })
+  it('puts the flow error before the check error and the warning', () => {
+    expect(
+      visibleMessage({ ...none, flowError: 'f', checkError: 'c' })
+    ).toEqual({ kind: 'error', text: 'f' })
+    expect(visibleMessage({ ...none, flowError: 'f', warning: 'w' })).toEqual({
+      kind: 'error',
+      text: 'f',
+    })
+  })
+  it('puts the check error before the warning', () => {
+    expect(visibleMessage({ ...none, checkError: 'c', warning: 'w' })).toEqual({
+      kind: 'check',
+      text: 'c',
+    })
+  })
+  it('ignores the check error in a transfer', () => {
+    expect(
+      visibleMessage({ ...none, checkError: 'c', inTransfer: true })
+    ).toBeNull()
+    expect(
+      visibleMessage({
+        ...none,
+        checkError: 'c',
+        warning: 'w',
+        inTransfer: true,
+      })
+    ).toEqual({ kind: 'warning', text: 'w' })
   })
 })

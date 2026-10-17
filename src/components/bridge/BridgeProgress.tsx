@@ -163,9 +163,9 @@ export function BridgeProgress({
       ) : (
         <ActionButton cta={cta} onClick={onCta} />
       )}
-      {completed && (nextStep || canStartNew) && (
+      {((completed && nextStep) || canStartNew) && (
         <div className="flex flex-wrap justify-center gap-2">
-          {nextStep && (
+          {completed && nextStep && (
             <Button variant="outline" asChild>
               {/^https?:\/\//.test(nextStep.href) ? (
                 <a href={nextStep.href} target="_blank" rel="noreferrer">

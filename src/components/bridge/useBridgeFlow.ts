@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   getAccount,
@@ -69,8 +69,9 @@ export interface UseBridgeFlowInput {
 
 /**
  * Everything the bridge widget does, without its markup: inputs, quote and
- * account check, the transfer's actions and their safeguards. Moved from
- * `BridgeFlow` unchanged, except where spec 0007 says otherwise.
+ * account check, the transfer's actions and their safeguards. The transfer
+ * actions were moved unchanged from the former `BridgeFlow` component, except
+ * where spec 0007 says otherwise.
  */
 export function useBridgeFlow({
   network,
@@ -99,7 +100,7 @@ export function useBridgeFlow({
   const sessionAddress = session?.address ?? null
 
   // No silent fallback: without a valid `source` the user must choose.
-  const [sourceChainId, setSourceChainId] = useState<number | null>(
+  const [sourceChainId, setSourceChainIdValue] = useState<number | null>(
     initialSourceChainId
   )
   const [amount, setAmountValue] = useState(initialAmount ?? '')
@@ -129,6 +130,23 @@ export function useBridgeFlow({
     error: refreshError,
   } = useBridgeTransfer()
   const hasTransfer = transfer !== null
+
+  // The transfer on screen belongs to the Stellar account it was loaded under:
+  // another account (sign out, sign in) must not inherit it. `pendingBurn`
+  // stays, so the form keeps "Record the burn" first.
+  const transferOwner = useRef<string | null>(null)
+  useEffect(() => {
+    if (!sessionAddress) return
+    if (transfer && transferOwner.current === null)
+      transferOwner.current = sessionAddress
+    if (transferOwner.current === null) return
+    if (transferOwner.current !== sessionAddress) {
+      transferOwner.current = null
+      setTransfer(null)
+      setPreflight(null)
+      setChangeTrustHash(null)
+    }
+  }, [sessionAddress, transfer, setTransfer])
   const pendingBurnChain = pendingBurn
     ? chains.find((c) => c.chainId === pendingBurn.chainId)
     : undefined
@@ -137,7 +155,13 @@ export function useBridgeFlow({
       ? evmTxUrl(pendingBurnChain, pendingBurn.hash)
       : null
 
+  const setSourceChainId = (chainId: number) => {
+    setFlowError(null)
+    setSourceChainIdValue(chainId)
+  }
+
   const setAmount = (value: string) => {
+    setFlowError(null)
     setAmountLinkInvalid(false)
     setAmountValue(value.trim())
   }
@@ -427,6 +451,7 @@ export function useBridgeFlow({
     })
 
   const newTransfer = () => {
+    if (!startNewAllowed) return
     setTransfer(null)
     setChangeTrustHash(null)
   }

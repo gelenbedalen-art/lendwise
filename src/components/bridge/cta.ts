@@ -192,3 +192,21 @@ export function progressCta(i: ProgressCtaInput): Cta<ProgressAction> {
   if (t.status === 'completed') return act('View in portfolio', 'portfolio')
   return off(STATUS_TEXT[t.status], { spinner: MOVING.has(t.status) })
 }
+
+export interface VisibleMessageInput {
+  flowError: string | null
+  checkError: string | null
+  warning: string | null
+  inTransfer: boolean
+}
+
+/** The one message under the card: an action's error, then the check's, then a warning. */
+export function visibleMessage(
+  i: VisibleMessageInput
+): { kind: 'error' | 'check' | 'warning'; text: string } | null {
+  if (i.flowError) return { kind: 'error', text: i.flowError }
+  if (i.checkError && !i.inTransfer)
+    return { kind: 'check', text: i.checkError }
+  if (i.warning) return { kind: 'warning', text: i.warning }
+  return null
+}

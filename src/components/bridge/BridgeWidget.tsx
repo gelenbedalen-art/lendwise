@@ -24,7 +24,7 @@ import { BridgeForm } from './BridgeForm'
 import { BridgeHistoryDialog } from './BridgeHistoryDialog'
 import { BridgeProgress } from './BridgeProgress'
 import { stellarUsdcBalance } from './amount-view'
-import { formCta, progressCta } from './cta'
+import { formCta, progressCta, visibleMessage } from './cta'
 import { hasOtherResumable } from './history'
 import { STATUS_TEXT } from './steps'
 import { useBridgeFlow } from './useBridgeFlow'
@@ -205,6 +205,13 @@ export function BridgeWidget({
     }
   }
 
+  const message = visibleMessage({
+    flowError: flow.flowError,
+    checkError: flow.checkError,
+    warning: flow.warning,
+    inTransfer: transfer !== null,
+  })
+
   const openHistory = () => {
     setHistoryOpen(true)
     void flow.actions.reloadTransfers()
@@ -297,19 +304,15 @@ export function BridgeWidget({
           />
         )}
 
-        {(flow.warning || flow.flowError || (!transfer && flow.checkError)) && (
+        {message && (
           <div className="flex flex-col gap-2 px-5 pb-5">
-            {flow.warning && (
-              <Alert>
-                <AlertDescription>{flow.warning}</AlertDescription>
-              </Alert>
-            )}
-            {!transfer && flow.checkError && (
-              <p className="text-destructive text-sm">{flow.checkError}</p>
-            )}
-            {flow.flowError && (
-              <Alert variant="destructive">
-                <AlertDescription>{flow.flowError}</AlertDescription>
+            {message.kind === 'check' ? (
+              <p className="text-destructive text-sm">{message.text}</p>
+            ) : (
+              <Alert
+                variant={message.kind === 'error' ? 'destructive' : undefined}
+              >
+                <AlertDescription>{message.text}</AlertDescription>
               </Alert>
             )}
           </div>

@@ -121,7 +121,7 @@ export function BridgeForm(p: BridgeFormProps) {
         onMax={
           payBalance === null
             ? undefined
-            : max === null
+            : max === null || p.disabled
               ? null
               : () => p.onAmount(max)
         }
@@ -154,7 +154,7 @@ export function BridgeForm(p: BridgeFormProps) {
           </p>
         }
         usd={usdText(p.quote?.minimumReceived ?? null)}
-        balance={p.stellarAddress ? (p.stellarBalance ?? '—') : null}
+        balance={p.stellarAddress ? (p.stellarBalance ?? '—') : '—'}
       />
       <div className="flex flex-col gap-3 border-t px-5 pt-3 pb-5">
         {p.quote && <Details quote={p.quote} />}
