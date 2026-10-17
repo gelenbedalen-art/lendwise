@@ -1,8 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-
-import Link from 'next/link'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   getAccount,
@@ -28,22 +26,16 @@ import {
   submitBridgeMint,
   submitChangeTrust,
 } from '@/app/actions'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
 import type { StellarNetworkId } from '@/config/stellar-network'
 import { useStellarWallet } from '@/contexts/StellarWalletContext'
 import { useBridgeTransfer } from '@/hooks/useBridgeTransfer'
 import { cctpConfig, evmTxUrl } from '@/lib/execution/cctp/config'
-import { BRIDGE_PAUSED_MESSAGE } from '@/lib/execution/cctp/kill-switch'
 import type { PreflightResult } from '@/lib/execution/cctp/trustline'
 import type { BridgeQuote, BridgeTransferView } from '@/lib/execution/cctp/view'
 import { requestPortfolioRefresh } from '@/lib/portfolio/refresh-event'
 import { useWalletStore } from '@/stores/walletStore'
 
-import { BridgePreflight } from './BridgePreflight'
-import { BridgeQuoteCard } from './BridgeQuoteCard'
-import { BridgeSteps } from './BridgeSteps'
-import { BridgeTransfersList } from './BridgeTransfersList'
+import { isUsdcAmount } from './amount-view'
 import {
   BURN_REPLACED_OR_CANCELLED,
   EVM_ACCOUNT_CHANGED,
@@ -54,7 +46,7 @@ import {
   sameEvmAccount,
 } from './steps'
 
-type Preflight = PreflightResult & { friendbotUrl: string | null }
+export type Preflight = PreflightResult & { friendbotUrl: string | null }
 
 const QUOTE_DEBOUNCE_MS = 400
 
@@ -65,25 +57,29 @@ function readable(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-export interface BridgeFlowProps {
+export interface UseBridgeFlowInput {
   network: StellarNetworkId
-  /** `CCTP_BRIDGE_ENABLED`, read on the server: false hides the form, never the resume. */
+  /** `CCTP_BRIDGE_ENABLED`, read on the server: false stops new transfers, never the resume. */
   enabled: boolean
   initialAmount: string | null
   initialSourceChainId: number | null
-  productId: string | null
-  /** Resolved on the server from `product`; null when the page had none. */
-  nextStep: { venue: string; href: string } | null
+  /** The link carried an `amount` that could not be read. */
+  linkAmountInvalid: boolean
 }
 
-export function BridgeFlow({
+/**
+ * Everything the bridge widget does, without its markup: inputs, quote and
+ * account check, the transfer's actions and their safeguards. The transfer
+ * actions were moved unchanged from the former `BridgeFlow` component, except
+ * where spec 0007 says otherwise.
+ */
+export function useBridgeFlow({
   network,
   enabled,
   initialAmount,
   initialSourceChainId,
-  productId,
-  nextStep,
-}: BridgeFlowProps) {
+  linkAmountInvalid,
+}: UseBridgeFlowInput) {
   const config = useConfig()
   const { isConnected: evmConnected, address: evmAddress } = useAccount()
   const { signTransaction } = useStellarWallet()
@@ -101,15 +97,21 @@ export function BridgeFlow({
       )?.stellarSession ?? null,
     [wallets]
   )
-  const ready = evmConnected && session !== null
+  const sessionAddress = session?.address ?? null
 
   // No silent fallback: without a valid `source` the user must choose.
-  const [sourceChainId, setSourceChainId] = useState<number | null>(
+  const [sourceChainId, setSourceChainIdValue] = useState<number | null>(
     initialSourceChainId
   )
-  const [amount, setAmount] = useState(initialAmount ?? '')
+  const [amount, setAmountValue] = useState(initialAmount ?? '')
+  // The link's amount could not be read; cleared by the first edit.
+  const [amountLinkInvalid, setAmountLinkInvalid] = useState(linkAmountInvalid)
   const [quote, setQuote] = useState<BridgeQuote | null>(null)
   const [preflight, setPreflight] = useState<Preflight | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [checkError, setCheckError] = useState<string | null>(null)
+  // Bumped to run the quote and the account check again.
+  const [checkTick, setCheckTick] = useState(0)
   const [changeTrustHash, setChangeTrustHash] = useState<string | null>(null)
   const [transfers, setTransfers] = useState<BridgeTransferView[]>([])
   const [busy, setBusy] = useState<string | null>(null)
@@ -128,6 +130,23 @@ export function BridgeFlow({
     error: refreshError,
   } = useBridgeTransfer()
   const hasTransfer = transfer !== null
+
+  // The transfer on screen belongs to the Stellar account it was loaded under:
+  // another account (sign out, sign in) must not inherit it. `pendingBurn`
+  // stays, so the form keeps "Record the burn" first.
+  const transferOwner = useRef<string | null>(null)
+  useEffect(() => {
+    if (!sessionAddress) return
+    if (transfer && transferOwner.current === null)
+      transferOwner.current = sessionAddress
+    if (transferOwner.current === null) return
+    if (transferOwner.current !== sessionAddress) {
+      transferOwner.current = null
+      setTransfer(null)
+      setPreflight(null)
+      setChangeTrustHash(null)
+    }
+  }, [sessionAddress, transfer, setTransfer])
   const pendingBurnChain = pendingBurn
     ? chains.find((c) => c.chainId === pendingBurn.chainId)
     : undefined
@@ -136,36 +155,67 @@ export function BridgeFlow({
       ? evmTxUrl(pendingBurnChain, pendingBurn.hash)
       : null
 
-  // Quote and pre-flight follow the inputs, debounced, while no transfer runs.
+  const setSourceChainId = (chainId: number) => {
+    setFlowError(null)
+    setSourceChainIdValue(chainId)
+  }
+
+  const setAmount = (value: string) => {
+    setFlowError(null)
+    setAmountLinkInvalid(false)
+    setAmountValue(value.trim())
+  }
+
+  // Quote and account check follow the inputs, debounced, while no transfer
+  // runs. The account check needs only the Stellar session: without a valid
+  // amount it still gives the Receive balance and the account's state.
   useEffect(() => {
     setQuote(null)
     setPreflight(null)
-    if (!enabled || !ready || !amount || sourceChainId === null || hasTransfer)
+    setCheckError(null)
+    if (!enabled || !sessionAddress || hasTransfer) {
+      setChecking(false)
       return
+    }
+    const validAmount = isUsdcAmount(amount)
+    const chainId = sourceChainId
+    setChecking(true)
     let cancelled = false
     const timer = setTimeout(async () => {
-      const [q, p] = await Promise.all([
-        quoteBridge({ sourceChainId, amount }),
-        preflightBridge({ amount }),
-      ])
-      if (cancelled) return
-      if (!q.ok) return setFlowError(q.error)
-      if (!p.ok) return setFlowError(p.error)
-      setFlowError(null)
-      setQuote(q.value)
-      setPreflight(p.value)
+      try {
+        const [q, p] = await Promise.all([
+          validAmount && chainId !== null
+            ? quoteBridge({ sourceChainId: chainId, amount })
+            : Promise.resolve(null),
+          preflightBridge(validAmount ? { amount } : {}),
+        ])
+        if (cancelled) return
+        if (q && !q.ok) return setCheckError(q.error)
+        if (!p.ok) return setCheckError(p.error)
+        setQuote(q ? q.value : null)
+        setPreflight(p.value)
+      } catch (err) {
+        if (!cancelled) setCheckError(readable(err))
+      } finally {
+        if (!cancelled) setChecking(false)
+      }
     }, QUOTE_DEBOUNCE_MS)
     return () => {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [enabled, ready, amount, sourceChainId, hasTransfer])
+  }, [enabled, sessionAddress, amount, sourceChainId, hasTransfer, checkTick])
+
+  const reloadTransfers = useCallback(async () => {
+    if (!sessionAddress) return setTransfers([])
+    const r = await listBridgeTransfers()
+    if (r.ok) setTransfers(r.value)
+  }, [sessionAddress])
 
   // The session's transfers, reloaded whenever the one on screen changes state.
   useEffect(() => {
-    if (!session) return
-    void listBridgeTransfers().then((r) => r.ok && setTransfers(r.value))
-  }, [session, transfer?.status])
+    void reloadTransfers()
+  }, [reloadTransfers, transfer?.status])
 
   useEffect(() => {
     if (transfer?.status === 'completed') requestPortfolioRefresh()
@@ -184,10 +234,23 @@ export function BridgeFlow({
     }
   }
 
-  const recheck = async (forAmount: string) => {
+  const recheck = useCallback(async (forAmount: string) => {
     const p = await preflightBridge({ amount: forAmount })
     if (p.ok) setPreflight(p.value)
-  }
+  }, [])
+
+  // Back on the tab (Friendbot, a wallet, an explorer): check the account
+  // again. This is the "Check again" the page lacked.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible' || busy !== null) return
+      if (!transfer) return setCheckTick((n) => n + 1)
+      if (preflight && preflight.state !== 'ready')
+        void recheck(transfer.amount)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [busy, transfer, preflight, recheck])
 
   const addTrustline = () =>
     run('Sign the USDC trustline in your Stellar wallet…', async () => {
@@ -363,17 +426,6 @@ export function BridgeFlow({
       resume(r.value)
     })
 
-  const canMint =
-    transfer !== null &&
-    (transfer.status === 'attested' ||
-      (transfer.status === 'failed' &&
-        transfer.resumable &&
-        transfer.feeExecuted !== null))
-  const canRetry =
-    transfer !== null &&
-    transfer.status === 'failed' &&
-    transfer.resumable &&
-    transfer.feeExecuted === null
   // Never offer a fresh start once USDC may have left the source chain.
   const startNewAllowed = canStartNew(transfer, pendingBurn, busy)
 
@@ -398,184 +450,43 @@ export function BridgeFlow({
       resume(r.value)
     })
 
-  return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Bridge USDC to Stellar</h1>
-        <p className="text-muted-foreground text-sm">
-          Native USDC from {chains.map((c) => c.name).join(', ')} to your
-          Stellar wallet, through Circle CCTP.
-          {network === 'testnet' &&
-            ' Testnet: test tokens only, no real funds.'}
-        </p>
-      </div>
+  const newTransfer = () => {
+    if (!startNewAllowed) return
+    setTransfer(null)
+    setChangeTrustHash(null)
+  }
 
-      {!ready && (
-        <Alert>
-          <AlertDescription>
-            Connect an EVM wallet and sign in with your Stellar wallet (top
-            right) to bridge.
-            {network === 'testnet' &&
-              ' Put both wallets on their test networks.'}
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {session && (
-        <BridgeTransfersList
-          transfers={transfers}
-          chains={chains}
-          currentId={transfer?.id ?? null}
-          busy={busy !== null}
-          onResume={resume}
-          onImport={importBurn}
-        />
-      )}
-
-      {pendingBurn && (
-        <Alert>
-          <AlertDescription className="flex flex-col gap-2">
-            <span>
-              A burn was sent from your wallet but is not recorded yet:{' '}
-              <code className="break-all">{pendingBurn.hash}</code>
-              {pendingBurnUrl && (
-                <>
-                  {' '}
-                  <a
-                    className="underline"
-                    href={pendingBurnUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    View on the explorer
-                  </a>
-                </>
-              )}
-              . Record it to continue; do not start another transfer.
-            </span>
-            <Button
-              className="w-fit"
-              disabled={busy !== null}
-              onClick={recordPendingBurn}
-            >
-              Record this burn
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {!enabled && !transfer && (
-        <Alert>
-          <AlertDescription>{BRIDGE_PAUSED_MESSAGE}</AlertDescription>
-        </Alert>
-      )}
-
-      {enabled && ready && session && !transfer && (
-        <>
-          <BridgeQuoteCard
-            chains={chains}
-            sourceChainId={sourceChainId}
-            onSourceChainId={setSourceChainId}
-            amount={amount}
-            onAmount={setAmount}
-            quote={quote}
-            recipient={session.address}
-            evmAddress={evmAddress ?? null}
-          />
-          {preflight && (
-            <BridgePreflight
-              result={preflight}
-              address={session.address}
-              busy={busy !== null}
-              onAddTrustline={addTrustline}
-            />
-          )}
-          <Button
-            className="w-fit"
-            disabled={
-              sourceChainId === null ||
-              !quote ||
-              preflight?.state !== 'ready' ||
-              pendingBurn !== null ||
-              busy !== null
-            }
-            onClick={start}
-          >
-            Bridge {quote?.amount ?? ''} USDC to Stellar
-          </Button>
-        </>
-      )}
-
-      {transfer && session && (
-        <>
-          <BridgeSteps transfer={transfer} />
-          {preflight && preflight.state !== 'ready' && (
-            <BridgePreflight
-              result={preflight}
-              address={session.address}
-              busy={busy !== null}
-              onAddTrustline={addTrustline}
-            />
-          )}
-          <div className="flex flex-wrap gap-3">
-            {canMint && (
-              <Button disabled={busy !== null} onClick={() => mint(transfer)}>
-                Mint USDC on Stellar
-              </Button>
-            )}
-            {canRetry && (
-              <Button
-                variant="outline"
-                disabled={busy !== null}
-                onClick={() => resume(transfer)}
-              >
-                Retry
-              </Button>
-            )}
-            {transfer.status === 'completed' && (
-              <Button asChild>
-                <Link href="/portfolio">View in portfolio</Link>
-              </Button>
-            )}
-            {transfer.status === 'completed' && productId && nextStep && (
-              <Button variant="outline" asChild>
-                {/^https?:\/\//.test(nextStep.href) ? (
-                  <a href={nextStep.href} target="_blank" rel="noreferrer">
-                    Next step: supply on {nextStep.venue}
-                  </a>
-                ) : (
-                  <Link href={nextStep.href}>
-                    Next step: supply on {nextStep.venue}
-                  </Link>
-                )}
-              </Button>
-            )}
-            {startNewAllowed && (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setTransfer(null)
-                  setChangeTrustHash(null)
-                }}
-              >
-                New transfer
-              </Button>
-            )}
-          </div>
-        </>
-      )}
-
-      {busy && <p className="text-muted-foreground text-sm">{busy}</p>}
-      {warning && (
-        <Alert>
-          <AlertDescription>{warning}</AlertDescription>
-        </Alert>
-      )}
-      {(flowError ?? refreshError) && (
-        <Alert variant="destructive">
-          <AlertDescription>{flowError ?? refreshError}</AlertDescription>
-        </Alert>
-      )}
-    </div>
-  )
+  return {
+    chains,
+    session,
+    evmConnected,
+    evmAddress: evmAddress ?? null,
+    sourceChainId,
+    setSourceChainId,
+    amount,
+    setAmount,
+    amountLinkInvalid,
+    quote,
+    preflight,
+    checking,
+    checkError,
+    transfers,
+    transfer,
+    busy,
+    warning,
+    flowError: flowError ?? refreshError,
+    pendingBurn,
+    pendingBurnUrl,
+    canStartNew: startNewAllowed,
+    actions: {
+      addTrustline,
+      start,
+      mint,
+      resume,
+      importBurn,
+      recordPendingBurn,
+      newTransfer,
+      reloadTransfers,
+    },
+  }
 }

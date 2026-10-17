@@ -24,6 +24,7 @@ const view = (over: Partial<BridgeTransferView> = {}): BridgeTransferView => ({
   tier: 'fast',
   tierExecuted: null,
   sourceChainId: 84532,
+  evmAddress: null,
   amount: '10',
   maxFee: '0.00156',
   feeExecuted: null,
@@ -273,9 +274,9 @@ describe('sameEvmAccount', () => {
 })
 
 describe('burnNotRecordedMessage', () => {
-  it('points at the "Record this burn" button, shown above the error', () => {
+  it('points at the "Record the burn" button, shown above the error', () => {
     expect(burnNotRecordedMessage('0xab', 'Too many requests.')).toBe(
-      'Burn sent (0xab) but not recorded: Too many requests. Use “Record this burn” above.'
+      'Burn sent (0xab) but not recorded: Too many requests. Use “Record the burn” above.'
     )
   })
 })

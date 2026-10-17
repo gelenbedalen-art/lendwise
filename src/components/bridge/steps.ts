@@ -199,9 +199,9 @@ export function sameEvmAccount(
 }
 
 /**
- * A burn the wallet sent that the server refused to record. The "Record this
- * burn" button sits in the pending-burn notice, above the error.
+ * A burn the wallet sent that the server refused to record. The "Record the
+ * burn" button sits above the error, with the burn's hash.
  */
 export function burnNotRecordedMessage(hash: string, error: string): string {
-  return `Burn sent (${hash}) but not recorded: ${error} Use “Record this burn” above.`
+  return `Burn sent (${hash}) but not recorded: ${error} Use “Record the burn” above.`
 }

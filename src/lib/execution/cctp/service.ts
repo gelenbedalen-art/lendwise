@@ -584,10 +584,15 @@ export function createBridgeService(deps: BridgeServiceDeps) {
         }
       }),
 
-    preflightBridge: (input: { amount: string }) =>
+    preflightBridge: (input: { amount?: string }) =>
       authed(async (session) => {
-        const i = parse(z.object({ amount: Amount }), input)
-        const expected = evmToStellarAtomic(parseUsdcAmount(i.amount))
+        const i = parse(z.object({ amount: Amount.optional() }), input)
+        // Without an amount: the account alone (exists, XLM, trustline), for
+        // the balance on screen. A zero amount never trips the limit check.
+        const expected =
+          i.amount === undefined
+            ? 0n
+            : evmToStellarAtomic(parseUsdcAmount(i.amount))
         const result = await preflight(session.address, expected)
         return { ...result, friendbotUrl: deps.network.friendbotUrl }
       }),
