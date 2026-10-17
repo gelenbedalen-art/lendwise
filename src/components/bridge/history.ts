@@ -36,6 +36,32 @@ export function hasOtherResumable(
   return transfers.some((t) => t.resumable && t.id !== currentId)
 }
 
+/**
+ * The banner above the form: the newest resumable transfer, and how many other
+ * resumable ones wait in the transfers window. Null when none.
+ */
+export function resumeNotice(
+  transfers: readonly BridgeTransferView[]
+): { transfer: BridgeTransferView; others: number } | null {
+  const waiting = transfers.filter((t) => t.resumable).sort(newestFirst)
+  if (waiting.length === 0) return null
+  return { transfer: waiting[0], others: waiting.length - 1 }
+}
+
+/** A transfer list, tagged with the Stellar account it was listed for. */
+export interface TransferList {
+  owner: string
+  list: BridgeTransferView[]
+}
+
+/** The list, only for the account it was listed for: never another account's. */
+export function transfersOf(
+  transfers: TransferList | null,
+  address: string | null
+): readonly BridgeTransferView[] {
+  return transfers && transfers.owner === address ? transfers.list : []
+}
+
 /** The server returned as many transfers as it can: older ones are not listed. */
 export function isHistoryTruncated(
   transfers: readonly BridgeTransferView[]
