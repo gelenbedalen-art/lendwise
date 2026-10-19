@@ -67,12 +67,10 @@ vi.mock('@/lib/protocols/core/toolkit', async (importOriginal) => {
 })
 
 async function load() {
-  const { COMPOUND_V3_CHAINS } = await import(
-    '@/lib/protocols/compound/v3/config'
-  )
-  const { fetchCompoundV3ApySpot } = await import(
-    '@/lib/protocols/compound/v3/apy-spot'
-  )
+  const { COMPOUND_V3_CHAINS } =
+    await import('@/lib/protocols/compound/v3/config')
+  const { fetchCompoundV3ApySpot } =
+    await import('@/lib/protocols/compound/v3/apy-spot')
   const url = (chainId: number) =>
     COMPOUND_V3_CHAINS[chainId].custom.subgraphUrl
   return { fetchCompoundV3ApySpot, url }
